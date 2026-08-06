@@ -83,7 +83,8 @@
     mobileSprint: false,
     mobileJumpQueued: false,
     nearestInteractable: null,
-    pausedByVisibility: false
+    pausedByVisibility: false,
+    modalOpen: false
   };
 
   const keys = Object.create(null);
@@ -103,7 +104,9 @@
     cityHall: { cx: 500, cz: 0, halfW: 10.2, halfD: 8.2 },
     generalStore: { cx: 535, cz: 0, halfW: 10.2, halfD: 8.2 },
     library: { cx: 570, cz: 0, halfW: 10.2, halfD: 8.2 },
-    cafe: { cx: 605, cz: 0, halfW: 10.2, halfD: 8.2 }
+    cafe: { cx: 605, cz: 0, halfW: 10.2, halfD: 8.2 },
+    home: { cx: 640, cz: 0, halfW: 12.5, halfD: 9.5 },
+    furnitureStore: { cx: 680, cz: 0, halfW: 12.0, halfD: 9.0 }
   };
 
   const AREA_NAMES = {
@@ -111,7 +114,9 @@
     cityHall: 'CITY HALL',
     generalStore: 'SUNNY GENERAL STORE',
     library: 'STORYBOOK LIBRARY',
-    cafe: 'CLOUD NINE CAFE'
+    cafe: 'CLOUD NINE CAFE',
+    home: 'SUNBEAM STUDIO',
+    furnitureStore: 'HAPPY HOME FURNISHINGS'
   };
 
   // ---------- Core renderer / scene ----------
@@ -265,8 +270,10 @@
     colliders.push({ type: 'box', x, z, halfW, halfD, area });
   }
 
-  function registerInteraction({ x, z, radius = 4, text, prompt = 'Interact', area = 'world', action = null }) {
-    interactables.push({ x, z, radius, text, prompt, area, action });
+  function registerInteraction({ x, z, object = null, radius = 4, text, prompt = 'Interact', area = 'world', action = null, enabled = null }) {
+    const item = { x, z, object, radius, text, prompt, area, action, enabled };
+    interactables.push(item);
+    return item;
   }
 
   function isBlocked(x, z, playerRadius = 0.52) {
@@ -686,11 +693,11 @@
   createTownBuilding({ x: -49, z: -27, w: 14, d: 10, h: 6.8, color: 0xe95a53, roofColor: 0x3f5365, label: 'Fire Station' });
   createTownBuilding({ x: 49, z: -27, w: 12, d: 8.5, h: 6.0, color: 0xa8d6e7, roofColor: 0x47627b, label: 'Post Office' });
   createTownBuilding({ x: -50, z: 17, w: 15, d: 10, h: 6.5, color: 0xf0d070, roofColor: 0x6f4c3d, label: 'Rainbow Elementary' });
-  createTownBuilding({ x: 16, z: 23, w: 11, d: 8, h: 5.7, color: 0xa5df8c, roofColor: 0x4e735d, label: 'Toy & Kite Shop', awningColor: 0xff7a35 });
+  createTownBuilding({ x: 16, z: 23, w: 11, d: 8, h: 5.7, color: 0xa5df8c, roofColor: 0x4e735d, label: 'Happy Home Furnishings', enterArea: 'furnitureStore', awningColor: 0xff7a35 });
   createTownBuilding({ x: 0, z: 53, w: 17, d: 10, h: 8.0, color: 0xb6b3ec, roofColor: 0x574d75, label: 'Moonbeam Theater', columns: 3 });
 
   // Apartment buildings give the town a slightly denser Sims-like neighborhood.
-  createTownBuilding({ x: -64, z: 49, w: 15, d: 11, h: 10.5, color: 0xf2a67d, roofColor: 0x70463a, label: 'Maple Apartments' });
+  createTownBuilding({ x: -64, z: 49, w: 15, d: 11, h: 10.5, color: 0xf2a67d, roofColor: 0x70463a, label: 'Maple Apartments', enterArea: 'home', prompt: 'Go home' });
   createTownBuilding({ x: 64, z: 49, w: 15, d: 11, h: 10.5, color: 0x8fd0cf, roofColor: 0x3d6d70, label: 'Hilltop Apartments' });
 
   // Residential streets.
@@ -1026,6 +1033,8 @@
     root.userData.target = new THREE.Vector2(spawn[0], spawn[1]);
     root.userData.think = rand(0.2, 2.6);
     root.userData.speed = rand(1.1, 1.8);
+    root.userData.id = `npc-${i}`;
+    root.userData.name = ['Maya','Benny','Pip','Luna','Theo','Milo','Nora','Jasper','Ivy','Finn','Rosie','Otis','Cleo','Sam','Tilly','Wren'][i];
     scene.add(root);
     npcs.push(root);
   });
@@ -1144,6 +1153,19 @@
   addInteriorTable('cafe', 0, 0.4, 2.5, 2.0);
   addInteriorTable('cafe', 4.2, 0.4, 2.5, 2.0);
   registerInteraction({ x: areaBounds.cafe.cx, z: areaBounds.cafe.cz - 4.6, radius: 3.0, prompt: 'Order snack', text: 'Today’s special is a star-shaped waffle with berry clouds.', area: 'cafe' });
+
+
+  createRoom('home', 0xffe8bd, 0xd8b887);
+  // The starter studio has useful fixtures from day one and leaves a large open
+  // center for player-placed furniture. Life-system code adds the interactive
+  // versions and upgrades without rebuilding the room shell.
+  addInteriorBox('home', -8.8, -6.5, 4.0, 0.65, 2.1, materials.wood, 0.34, false);
+  addInteriorBox('home', 9.2, -6.4, 3.2, 2.4, 2.0, materials.teal, 1.2, false);
+  addInteriorBox('home', 8.6, 5.6, 3.0, 2.7, 1.8, materials.white, 1.35, false);
+
+  createRoom('furnitureStore', 0xe3f4d0, 0xc9ad7c);
+  for (const x of [-7.8, -2.6, 2.6, 7.8]) addInteriorBox('furnitureStore', x, -4.6, 3.6, 0.55, 2.8, materials.wood, 0.28, false);
+  addInteriorBox('furnitureStore', 0, 5.6, 8.6, 1.4, 1.5, materials.orange, 0.7, false);
 
   function enterInterior(area, exteriorPoint) {
     const b = areaBounds[area];
@@ -1286,7 +1308,10 @@
     let nearestDistance = Infinity;
     for (const item of interactables) {
       if (item.area !== state.area) continue;
-      const d = Math.hypot(player.position.x - item.x, player.position.z - item.z);
+      if (item.enabled && !item.enabled()) continue;
+      const ix = item.object ? item.object.position.x : item.x;
+      const iz = item.object ? item.object.position.z : item.z;
+      const d = Math.hypot(player.position.x - ix, player.position.z - iz);
       if (d < item.radius && d < nearestDistance) {
         nearest = item;
         nearestDistance = d;
@@ -1612,9 +1637,19 @@
   }
 
   function shouldRunGameplay() {
-    if (!state.started || state.pausedByVisibility) return false;
+    if (!state.started || state.pausedByVisibility || state.modalOpen) return false;
     if (DEVICE.touch) return true;
     return document.pointerLockElement === renderer.domElement;
+  }
+
+
+  const extensionHooks = [];
+  function registerUpdateHook(callback) {
+    if (typeof callback === 'function') extensionHooks.push(callback);
+    return () => {
+      const index = extensionHooks.indexOf(callback);
+      if (index >= 0) extensionHooks.splice(index, 1);
+    };
   }
 
   function loop(now) {
@@ -1636,10 +1671,60 @@
       updateUI(dt);
     } else {
       updateWorld(dt);
+      updateUI(dt);
+    }
+    for (const hook of extensionHooks) {
+      try { hook(dt, now); } catch (error) { console.error('[Toon Valley extension]', error); }
     }
     updateCamera(dt);
     renderer.render(scene, camera);
   }
+
+
+  window.ToonValley = Object.freeze({
+    THREE,
+    DEVICE,
+    CONFIG,
+    state,
+    scene,
+    camera,
+    renderer,
+    sun,
+    interiorLight,
+    materials,
+    mat,
+    outlineMaterial,
+    outlinedMesh,
+    unitBox,
+    terrainHeight,
+    currentGroundHeight,
+    player,
+    playerVelocity,
+    npcs,
+    colliders,
+    interactables,
+    areaBounds,
+    AREA_NAMES,
+    interiorGroups,
+    registerInteraction,
+    addBoxCollider,
+    addCircleCollider,
+    createTownBuilding,
+    createHouse,
+    createCharacter,
+    createRoom,
+    addInteriorBox,
+    addInteriorTable,
+    enterInterior,
+    exitInterior,
+    updateLocationName,
+    showToast,
+    applyQuality,
+    registerUpdateHook,
+    setModalOpen(value) { state.modalOpen = Boolean(value); },
+    setAreaName(area, name) { AREA_NAMES[area] = name; updateLocationName(); }
+  });
+  window.dispatchEvent(new CustomEvent('toonvalley:ready', { detail: window.ToonValley }));
 
   requestAnimationFrame(loop);
 })();

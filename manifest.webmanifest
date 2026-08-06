@@ -1,0 +1,16 @@
+{
+  "name": "Toon Valley",
+  "short_name": "Toon Valley",
+  "description": "A lightweight cel-shaded open-world life simulator.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#71c9ff",
+  "theme_color": "#71c9ff",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
