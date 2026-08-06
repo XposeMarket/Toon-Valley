@@ -2,9 +2,10 @@ import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 import process from 'node:process';
 
-const server = spawn('python3', ['-m', 'http.server', '4173', '--bind', '127.0.0.1'], { stdio: ['ignore', 'pipe', 'pipe'] });
+const remoteURL = process.env.BASE_URL?.replace(/\/$/, '');
+const server = remoteURL ? null : spawn('python3', ['-m', 'http.server', '4173', '--bind', '127.0.0.1'], { stdio: ['ignore', 'pipe', 'pipe'] });
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-await wait(900);
+if (server) await wait(900);
 
 const browser = await chromium.launch({ headless: true, args: ['--use-gl=swiftshader', '--enable-webgl'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 760 } });
@@ -15,7 +16,7 @@ page.on('console', (message) => {
 });
 
 try {
-  await page.goto('http://127.0.0.1:4173', { waitUntil: 'networkidle', timeout: 60000 });
+  await page.goto(remoteURL || 'http://127.0.0.1:4173', { waitUntil: 'networkidle', timeout: 60000 });
   await page.waitForFunction(() => window.ToonValley && window.ToonValleyLife, null, { timeout: 30000 });
   await page.waitForSelector('#life-hud');
 
@@ -53,8 +54,8 @@ try {
   if (!finalState.property.furniture.length) throw new Error('Furniture placement did not persist');
   if ((finalState.player.inventory.apple || 0) < 3) throw new Error('Shop purchase did not persist');
   if (errors.length) throw new Error(errors.join('\n'));
-  console.log('Toon Valley browser smoke test passed.');
+  console.log(`Toon Valley browser smoke test passed: ${remoteURL || 'localhost'}`);
 } finally {
   await browser.close();
-  server.kill('SIGTERM');
+  server?.kill('SIGTERM');
 }
