@@ -40,7 +40,7 @@ try {
       const enteredBlocked = TV.isBlocked(entered.x, entered.z);
       const movementSpace = {
         forward: !TV.isBlocked(entered.x, entered.z - 0.5),
-        backward: !TV.isBlocked(entered.x, entered.zex + 0.5),
+        backward: !TV.isBlocked(entered.x, entered.z + 0.5),
         left: !TV.isBlocked(entered.x - 0.5, entered.z),
         right: !TV.isBlocked(entered.x + 0.5, entered.z)
       };
