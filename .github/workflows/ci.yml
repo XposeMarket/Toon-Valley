@@ -27,6 +27,7 @@ jobs:
       - name: Local browser smoke test
         run: node tests/smoke.mjs
       - name: Production browser health check
+        # This executes the same General Store entry/recovery/exit regression on the public deployment.
         env:
           BASE_URL: https://toon-valley.vercel.app
         run: node tests/smoke.mjs
