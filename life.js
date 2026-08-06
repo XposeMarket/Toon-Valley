@@ -1317,6 +1317,10 @@
     if(position.area&&position.area!=='world'&&TV.areaBounds[position.area]){
       TV.enterInterior(position.area,position.returnPoint||{x:0,z:10});
       TV.player.position.set(position.x,0,position.z);
+      if (TV.ensurePlayerSafePosition()) {
+        save.player.position.x = TV.player.position.x;
+        save.player.position.z = TV.player.position.z;
+      }
     }else{
       if(TV.state.area!=='world')TV.exitInterior();
       TV.player.position.set(position.x,TV.terrainHeight(position.x,position.z),position.z);

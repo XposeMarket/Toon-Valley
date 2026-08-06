@@ -31,6 +31,42 @@ try {
   await page.evaluate(() => document.querySelector('.life-close')?.click());
   await page.waitForSelector('.life-overlay', { state: 'detached' });
 
+  const supportsInteriorRecovery = await page.evaluate(() => typeof window.ToonValley.ensurePlayerSafePosition === 'function');
+  if (!remoteURL || supportsInteriorRecovery) {
+    const storeState = await page.evaluate(() => {
+      const TV = window.ToonValley;
+      TV.enterInterior('generalStore', { x: 26, z: -18 });
+      const entered = { x: TV.player.position.x, z: TV.player.position.z };
+      const enteredBlocked = TV.isBlocked(entered.x, entered.z);
+      const movementSpace = {
+        forward: !TV.isBlocked(entered.x, entered.z - 0.5),
+        backward: !TV.isBlocked(entered.x, entered.zex + 0.5),
+        left: !TV.isBlocked(entered.x - 0.5, entered.z),
+        right: !TV.isBlocked(entered.x + 0.5, entered.z)
+      };
+
+      // Reproduce the old broken save/spawn location and verify automatic rescue.
+      TV.player.position.set(TV.areaBounds.generalStore.cx, 0, TV.areaBounds.generalStore.cz + 5.0);
+      const rescued = TV.ensurePlayerSafePosition();
+      const rescuedPosition = { x: TV.player.position.x, z: TV.player.position.z };
+      const rescuedBlocked = TV.isBlocked(rescuedPosition.x, rescuedPosition.z);
+      TV.exitInterior();
+      return {
+        entered,
+        enteredBlocked,
+        movementSpace,
+        rescued,
+        rescuedPosition,
+        rescuedBlocked,
+        exited: TV.state.area === 'world'
+      };
+    });
+    if (storeState.enteredBlocked) throw new Error(`General Store entry spawn is blocked: ${JSON.stringify(storeState.entered)}`);
+    if (!Object.values(storeState.movementSpace).some(Boolean)) throw new Error(`General Store has no traversable movement direction: ${JSON.stringify(storeState)}`);
+    if (!storeState.rescued || storeState.rescuedBlocked) throw new Error(`General Store recovery failed: ${JSON.stringify(storeState)}`);
+    if (!storeState.exited) throw new Error(`General Store exit failed: ${JSON.stringify(storeState)}`);
+  }
+
   await page.evaluate(() => window.ToonValley.enterInterior('home', { x: -64, z: 57 }));
   await page.evaluate(() => window.ToonValleyLife.startBuild('chairBlue'));
   await page.waitForSelector('#build-controls', { state: 'visible' });

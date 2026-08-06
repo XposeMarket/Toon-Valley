@@ -1167,6 +1167,43 @@
   for (const x of [-7.8, -2.6, 2.6, 7.8]) addInteriorBox('furnitureStore', x, -4.6, 3.6, 0.55, 2.8, materials.wood, 0.28, false);
   addInteriorBox('furnitureStore', 0, 5.6, 8.6, 1.4, 1.5, materials.orange, 0.7, false);
 
+  function findSafeInteriorPosition(area, preferred = null) {
+    const b = areaBounds[area];
+    if (!b) return { x: 0, z: 10 };
+
+    const preferredX = Number.isFinite(preferred?.x) ? preferred.x : b.cx;
+    const preferredZ = Number.isFinite(preferred?.z) ? preferred.z : b.cz + b.halfD - 1.85;
+    const nearDoorZ = b.cz + b.halfD - 1.85;
+    const candidates = [
+      [preferredX, preferredZ],
+      [b.cx, nearDoorZ],
+      [b.cx - 2.4, nearDoorZ],
+      [b.cx + 2.4, nearDoorZ],
+      [b.cx, b.cz + 1.7],
+      [b.cx - 3.0, b.cz + 1.0],
+      [b.cx + 3.0, b.cz + 1.0],
+      [b.cx, b.cz]
+    ];
+
+    const previousArea = state.area;
+    state.area = area;
+    const safe = candidates.find(([x, z]) => !isBlocked(x, z));
+    state.area = previousArea;
+    return safe ? { x: safe[0], z: safe[1] } : { x: b.cx, z: nearDoorZ };
+  }
+
+  function ensurePlayerSafePosition() {
+    if (state.area === 'world' || !areaBounds[state.area]) return false;
+    if (!isBlocked(player.position.x, player.position.z)) return false;
+    const safe = findSafeInteriorPosition(state.area);
+    player.position.set(safe.x, 0, safe.z);
+    playerVelocity.set(0, 0, 0);
+    state.cameraReady = false;
+    state.grounded = true;
+    showToast('Moved you to a clear spot by the exit.', 2.2);
+    return true;
+  }
+
   function enterInterior(area, exteriorPoint) {
     const b = areaBounds[area];
     if (!b) return;
@@ -1175,7 +1212,8 @@
     interiorGroups[area].visible = true;
     interiorLight.position.set(b.cx, 6.3, b.cz);
     interiorLight.visible = true;
-    player.position.set(b.cx, 0, b.cz + b.halfD - 3.2);
+    const spawn = findSafeInteriorPosition(area);
+    player.position.set(spawn.x, 0, spawn.z);
     playerVelocity.set(0, 0, 0);
     state.yaw = 0;
     state.pitch = 0.05;
@@ -1698,6 +1736,9 @@
     unitBox,
     terrainHeight,
     currentGroundHeight,
+    isBlocked,
+    findSafeInteriorPosition,
+    ensurePlayerSafePosition,
     player,
     playerVelocity,
     npcs,
