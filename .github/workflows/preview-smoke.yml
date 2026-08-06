@@ -1,4 +1,4 @@
-name: Toon Valley Preview Smoke
+name: Toon Valley Production Smoke
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
       - '.github/workflows/preview-smoke.yml'
 
 jobs:
-  verify-preview:
+  verify-production:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -19,4 +19,4 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: node tests/smoke.mjs
         env:
-          BASE_URL: https://toon-valley-5km1fmj2z-xpose-markets-projects.vercel.app/?_vercel_share=5bzm7SOcjgmNYrGn7nwnqwYiq9W3msgI
+          BASE_URL: https://toon-valley.vercel.app
