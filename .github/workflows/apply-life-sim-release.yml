@@ -22,7 +22,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat .github/release/release.b64.* | base64 --decode > /tmp/toon-valley-life-sim.tgz
+          cat .github/release/release.b64.0{0..8} .github/release/release.b64.09_{0..6} .github/release/release.b64.10 | base64 --decode > /tmp/toon-valley-life-sim.tgz
           echo '9456e90962233f28625b62725b2be906b025c46009b37a0ec5acf01d59b9cc8e  /tmp/toon-valley-life-sim.tgz' | sha256sum --check --strict
           tar -xzf /tmp/toon-valley-life-sim.tgz -C .
 
