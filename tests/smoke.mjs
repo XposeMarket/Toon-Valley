@@ -25,14 +25,14 @@ try {
 
   await page.click('#play-button');
   await page.waitForFunction(() => window.ToonValley.state.started);
-  await page.click('#phone-button');
+  await page.click('#phone-button', { force: true });
   await page.waitForSelector('.life-overlay .life-window');
   await page.click('.life-close');
 
   await page.evaluate(() => window.ToonValley.enterInterior('home', { x: -64, z: 57 }));
   await page.evaluate(() => window.ToonValleyLife.startBuild('chairBlue'));
   await page.waitForSelector('#build-controls');
-  await page.click('[data-build="place"]');
+  await page.click('[data-build="place"]', { force: true });
   await page.waitForFunction(() => window.ToonValleyLife.getState().property.furniture.length >= 1);
 
   await page.evaluate(() => window.ToonValleyLife.openShop('grocery'));
