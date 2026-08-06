@@ -19,4 +19,4 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: node tests/smoke.mjs
         env:
-          BASE_URL: https://toon-valley-of7938rwv-xpose-markets-projects.vercel.app
+          BASE_URL: https://toon-valley-5km1fmj2z-xpose-markets-projects.vercel.app
