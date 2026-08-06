@@ -47,12 +47,6 @@ jobs:
               raise SystemExit('The start-screen smoke-test step was not added.')
           path.write_text(source)
 
-      - name: Remove release transport files
-        shell: bash
-        run: |
-          rm -rf .github/release
-          rm -f .github/workflows/apply-life-sim-release.yml
-
       - name: Triple static verification
         shell: bash
         run: |
@@ -72,12 +66,12 @@ jobs:
             ! grep -RniE 'TODO|FIXME|placeholder|coming soon|not implemented|full build' --exclude-dir=.git --exclude='*.md' .
           done
 
-      - name: Commit complete life-sim release
+      - name: Commit game files without workflow mutation
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'Toon Valley Builder'
           git config user.email 'xposemarket@gmail.com'
-          git add -A
+          git add README.md game.js icon.svg index.html life.css life.js manifest.webmanifest run-mac.command style.css sw.js tests/smoke.mjs vercel.json
           git commit -m 'Build Toon Valley life simulator'
           git push
