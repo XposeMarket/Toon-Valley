@@ -1,0 +1,202 @@
+name: Fix General Store Interior
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-general-store.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch safe interior spawning and recovery
+        shell: python
+        run: |
+          from pathlib import Path
+
+          game = Path('game.js')
+          source = game.read_text()
+          old = """  function enterInterior(area, exteriorPoint) {
+    const b = areaBounds[area];
+    if (!b) return;
+    state.returnPoint = exteriorPoint || { x: player.position.x, z: player.position.z };
+    state.area = area;
+    interiorGroups[area].visible = true;
+    interiorLight.position.set(b.cx, 6.3, b.cz);
+    interiorLight.visible = true;
+    player.position.set(b.cx, 0, b.cz + b.halfD - 3.2);
+    playerVelocity.set(0, 0, 0);
+    state.yaw = 0;
+    state.pitch = 0.05;
+    state.cameraReady = false;
+    state.grounded = true;
+    updateLocationName();
+    showToast(`Welcome to ${AREA_NAMES[area]}.`, 2.2);
+  }
+"""
+          new = """  function findSafeInteriorPosition(area, preferred = null) {
+    const b = areaBounds[area];
+    if (!b) return { x: 0, z: 10 };
+
+    const preferredX = Number.isFinite(preferred?.x) ? preferred.x : b.cx;
+    const preferredZ = Number.isFinite(preferred?.z) ? preferred.z : b.cz + b.halfD - 1.85;
+    const nearDoorZ = b.cz + b.halfD - 1.85;
+    const candidates = [
+      [preferredX, preferredZ],
+      [b.cx, nearDoorZ],
+      [b.cx - 2.4, nearDoorZ],
+      [b.cx + 2.4, nearDoorZ],
+      [b.cx, b.cz + 1.7],
+      [b.cx - 3.0, b.cz + 1.0],
+      [b.cx + 3.0, b.cz + 1.0],
+      [b.cx, b.cz]
+    ];
+
+    const previousArea = state.area;
+    state.area = area;
+    const safe = candidates.find(([x, z]) => !isBlocked(x, z));
+    state.area = previousArea;
+    return safe ? { x: safe[0], z: safe[1] } : { x: b.cx, z: nearDoorZ };
+  }
+
+  function ensurePlayerSafePosition() {
+    if (state.area === 'world' || !areaBounds[state.area]) return false;
+    if (!isBlocked(player.position.x, player.position.z)) return false;
+    const safe = findSafeInteriorPosition(state.area);
+    player.position.set(safe.x, 0, safe.z);
+    playerVelocity.set(0, 0, 0);
+    state.cameraReady = false;
+    state.grounded = true;
+    showToast('Moved you to a clear spot by the exit.', 2.2);
+    return true;
+  }
+
+  function enterInterior(area, exteriorPoint) {
+    const b = areaBounds[area];
+    if (!b) return;
+    state.returnPoint = exteriorPoint || { x: player.position.x, z: player.position.z };
+    state.area = area;
+    interiorGroups[area].visible = true;
+    interiorLight.position.set(b.cx, 6.3, b.cz);
+    interiorLight.visible = true;
+    const spawn = findSafeInteriorPosition(area);
+    player.position.set(spawn.x, 0, spawn.z);
+    playerVelocity.set(0, 0, 0);
+    state.yaw = 0;
+    state.pitch = 0.05;
+    state.cameraReady = false;
+    state.grounded = true;
+    updateLocationName();
+    showToast(`Welcome to ${AREA_NAMES[area]}.`, 2.2);
+  }
+"""
+          if old not in source:
+              raise SystemExit('Expected enterInterior block was not found.')
+          source = source.replace(old, new, 1)
+
+          export_old = """    currentGroundHeight,
+    player,
+"""
+          export_new = """    currentGroundHeight,
+    isBlocked,
+    findSafeInteriorPosition,
+    ensurePlayerSafePosition,
+    player,
+"""
+          if export_old not in source:
+              raise SystemExit('Expected core API export block was not found.')
+          source = source.replace(export_old, export_new, 1)
+          game.write_text(source)
+
+          life = Path('life.js')
+          source = life.read_text()
+          load_old = """      TV.enterInterior(position.area,position.returnPoint||{x:0,z:10});
+      TV.player.position.set(position.x,0,position.z);
+"""
+          load_new = """      TV.enterInterior(position.area,position.returnPoint||{x:0,z:10});
+      TV.player.position.set(position.x,0,position.z);
+      if (TV.ensurePlayerSafePosition()) {
+        save.player.position.x = TV.player.position.x;
+        save.player.position.z = TV.player.position.z;
+      }
+"""
+          if load_old not in source:
+              raise SystemExit('Expected interior save-load block was not found.')
+          source = source.replace(load_old, load_new, 1)
+          life.write_text(source)
+
+          smoke = Path('tests/smoke.mjs')
+          source = smoke.read_text()
+          marker = """  await page.waitForSelector('.life-overlay', { state: 'detached' });
+
+  await page.evaluate(() => window.ToonValley.enterInterior('home', { x: -64, z: 57 }));
+"""
+          insertion = """  await page.waitForSelector('.life-overlay', { state: 'detached' });
+
+  const supportsInteriorRecovery = await page.evaluate(() => typeof window.ToonValley.ensurePlayerSafePosition === 'function');
+  if (!remoteURL || supportsInteriorRecovery) {
+    const storeState = await page.evaluate(() => {
+      const TV = window.ToonValley;
+      TV.enterInterior('generalStore', { x: 26, z: -18 });
+      const entered = { x: TV.player.position.x, z: TV.player.position.z };
+      const enteredBlocked = TV.isBlocked(entered.x, entered.z);
+
+      // Reproduce the old broken save/spawn location and verify automatic rescue.
+      TV.player.position.set(TV.areaBounds.generalStore.cx, 0, TV.areaBounds.generalStore.cz + 5.0);
+      const rescued = TV.ensurePlayerSafePosition();
+      const rescuedPosition = { x: TV.player.position.x, z: TV.player.position.z };
+      const rescuedBlocked = TV.isBlocked(rescuedPosition.x, rescuedPosition.z);
+      return { entered, enteredBlocked, rescued, rescuedPosition, rescuedBlocked };
+    });
+    if (storeState.enteredBlocked) throw new Error(`General Store entry spawn is blocked: ${JSON.stringify(storeState.entered)}`);
+    if (!storeState.rescued || storeState.rescuedBlocked) throw new Error(`General Store recovery failed: ${JSON.stringify(storeState)}`);
+
+    const beforeStoreMove = await page.evaluate(() => ({ x: window.ToonValley.player.position.x, z: window.ToonValley.player.position.z }));
+    await page.keyboard.down('KeyW');
+    await wait(450);
+    await page.keyboard.up('KeyW');
+    const afterStoreMove = await page.evaluate(() => ({ x: window.ToonValley.player.position.x, z: window.ToonValley.player.position.z }));
+    if (Math.hypot(afterStoreMove.x - beforeStoreMove.x, afterStoreMove.z - beforeStoreMove.z) < 0.12) {
+      throw new Error(`Player could not move inside General Store: ${JSON.stringify({ beforeStoreMove, afterStoreMove })}`);
+    }
+
+    await page.keyboard.press('KeyE');
+    await page.waitForFunction(() => window.ToonValley.state.area === 'world');
+  }
+
+  await page.evaluate(() => window.ToonValley.enterInterior('home', { x: -64, z: 57 }));
+"""
+          if marker not in source:
+              raise SystemExit('Expected smoke-test insertion point was not found.')
+          source = source.replace(marker, insertion, 1)
+          smoke.write_text(source)
+
+      - name: Verify patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check game.js
+          node --check life.js
+          node --check tests/smoke.mjs
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+          node tests/smoke.mjs
+
+      - name: Commit fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Toon Valley Builder'
+          git config user.email 'xposemarket@gmail.com'
+          git add game.js life.js tests/smoke.mjs
+          git commit -m 'Fix trapped General Store interior spawn'
+          git push
