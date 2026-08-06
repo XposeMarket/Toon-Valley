@@ -19,7 +19,7 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Diagnose preview boot
         run: |
-          cat > /tmp/preview-diagnostic.mjs <<'EOF'
+          cat > preview-diagnostic.mjs <<'EOF'
           import { chromium } from 'playwright';
           const url = 'https://toon-valley-5km1fmj2z-xpose-markets-projects.vercel.app';
           const browser = await chromium.launch({ headless: true, args: ['--use-gl=swiftshader', '--enable-webgl'] });
@@ -43,4 +43,4 @@ jobs:
           await browser.close();
           if (!state.game || !state.life) process.exit(1);
           EOF
-          node /tmp/preview-diagnostic.mjs
+          node preview-diagnostic.mjs
