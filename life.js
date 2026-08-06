@@ -544,6 +544,33 @@
     }));
   }
 
+  function openOutdoorMarket() {
+    const rotations = [
+      ['apple', 'juice', 'pottedPlant', 'rainbowRug'],
+      ['sandwich', 'berryCake', 'chairBlue', 'floorLamp'],
+      ['soup', 'apple', 'tableSunny', 'bookshelf']
+    ];
+    const ids = rotations[save.world.day % rotations.length];
+    const overlay = modal('Toon Valley Outdoor Market', `
+      <div class="life-notice"><b>Fresh daily stock</b><br>The outdoor stalls rotate food and handmade home goods every in-game day. Market prices are 10% below the regular shops.</div>
+      <div class="life-grid">${ids.map((id) => {
+        const item = ITEM_DEFS[id];
+        const price = Math.max(1, Math.ceil(item.price * 0.9));
+        return `<article class="life-card"><div class="item-icon">${item.icon}</div><h3>${item.name}</h3><p>${item.description}</p><div class="spacer"></div><div class="life-card-meta"><span>${item.type === 'furniture' ? 'HANDMADE HOME ITEM' : 'FRESH MARKET FOOD'}</span><b>$${price}</b></div><button class="life-button green" data-market-buy="${id}" data-price="${price}">BUY</button></article>`;
+      }).join('')}</div>`, { wide: true });
+    overlay.querySelectorAll('[data-market-buy]').forEach((button) => button.addEventListener('click', () => {
+      const id = button.dataset.marketBuy;
+      const price = Number(button.dataset.price);
+      if (!spendMoney(price)) return;
+      addItem(id, 1);
+      save.player.stats.itemsBought++;
+      emitProgress('buy', 1, { itemId: id });
+      TV.showToast(`${ITEM_DEFS[id].icon} ${ITEM_DEFS[id].name} bought at the outdoor market.`, 2.2);
+      sfx('buy');
+      saveGame('market-purchase');
+    }));
+  }
+
   function xpForNext(level) { return 35 + level * 25; }
 
   function gainSkill(id, amount) {
@@ -1277,6 +1304,11 @@
     const replace=(area,prompt,action)=>{ const item=TV.interactables.find((i)=>i.area===area&&i.prompt===prompt); if(item)item.action=action; };
     replace('generalStore','Browse counter',()=>openShop('grocery'));
     replace('cafe','Order snack',()=>openCafeCounter());
+    const market = TV.interactables.find((item) => item.area === 'world' && item.prompt === 'Browse market');
+    if (market) {
+      market.prompt = 'Shop outdoor market';
+      market.action = openOutdoorMarket;
+    }
     const cityDesk=TV.interactables.find((i)=>i.area==='cityHall'&&i.prompt==='Ask about town'); if(cityDesk){cityDesk.prompt='Open job & property desk';cityDesk.action=()=>openJobs();}
 
     const fs=TV.areaBounds.furnitureStore;
@@ -1447,6 +1479,10 @@
     await loadGame(activeSlot);
     requestPersistentStorage();
     TV.registerUpdateHook(updateLife);
+    window.addEventListener('toonvalley:sit', () => {
+      save.player.needs.happiness = clampNeed(save.player.needs.happiness + 2);
+      updateHUD();
+    });
     window.addEventListener('pagehide',()=>saveGame('pagehide'));
     document.addEventListener('visibilitychange',()=>{if(document.hidden)saveGame('background');});
     window.addEventListener('beforeunload',()=>{captureRuntimeState();try{localStorage.setItem(EMERGENCY_KEY,JSON.stringify(save));}catch(_){}});
@@ -1462,6 +1498,7 @@
     loadGame,
     openPhone,
     openShop,
+    openOutdoorMarket,
     openJobs,
     startJob,
     startBuild,

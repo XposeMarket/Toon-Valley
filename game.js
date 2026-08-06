@@ -81,10 +81,14 @@
     mobileMoveX: 0,
     mobileMoveY: 0,
     mobileSprint: false,
+    sprintToggle: false,
+    jumpQueued: false,
     mobileJumpQueued: false,
     nearestInteractable: null,
     pausedByVisibility: false,
-    modalOpen: false
+    modalOpen: false,
+    seated: false,
+    seat: null
   };
 
   const keys = Object.create(null);
@@ -304,8 +308,10 @@
   }
 
   const roadStripeTransforms = [];
+  const roadSegments = [];
 
   function addRoadSegment(x1, z1, x2, z2, width = 8.2, stripes = true) {
+    roadSegments.push({ x1, z1, x2, z2, width });
     const dx = x2 - x1;
     const dz = z2 - z1;
     const length = Math.hypot(dx, dz) + 0.8;
@@ -362,8 +368,12 @@
 
   // ---------- Road network ----------
   // Main roads form a compact, readable town grid while a winding road exits west/east.
-  addRoadSegment(-84, -2, 86, -2, 8.8, true);
-  addRoadSegment(0, -72, 0, 71, 8.8, true);
+  // The civic plaza and major landmarks interrupt the streets instead of
+  // having roads visibly pass through buildings, fountains, or the theater.
+  addRoadSegment(-84, -2, -16, -2, 8.8, true);
+  addRoadSegment(16, -2, 86, -2, 8.8, true);
+  addRoadSegment(0, -72, 0, -43, 8.8, true);
+  addRoadSegment(0, 15, 0, 43, 8.8, true);
   addRoadSegment(-64, -38, 64, -38, 7.4, false);
   addRoadSegment(-64, 34, 64, 34, 7.4, false);
   addRoadSegment(-43, -66, -43, 63, 7.2, false);
@@ -519,6 +529,7 @@
   const chimneyGeo = new THREE.BoxGeometry(0.52, 1.25, 0.52);
   const houseColors = [0xffd56a, 0xff9f69, 0x8dd8e7, 0xc5e47d, 0xf1b2d0, 0xb6b3ec];
   const roofColors = [0xd64e45, 0x455d7a, 0x8a5438, 0x684d73];
+  const townBuildings = [];
 
   function createWindows(root, positions, material = materials.yellow) {
     if (!positions.length) return;
@@ -572,11 +583,12 @@
     const {
       x, z, w = 9, d = 7, h = 6, color = 0xffd56a, roofColor = 0x455d7a,
       label = 'Town Building', enterArea = null, prompt = null, tower = false,
-      awningColor = null, columns = 0, icon = null
+      awningColor = null, columns = 0, icon = null, rotation = 0
     } = options;
 
     const root = new THREE.Group();
     root.position.set(x, terrainHeight(x, z), z);
+    root.rotation.y = rotation;
 
     const body = outlinedMesh(unitBox, mat(color), 1.018);
     body.position.y = h * 0.5;
@@ -665,12 +677,24 @@
     }
 
     scene.add(root);
-    addBoxCollider(x, z, w * 0.5, d * 0.5);
+    const quarterTurn = Math.abs(Math.sin(rotation)) > 0.7;
+    const colliderHalfW = quarterTurn ? d * 0.5 : w * 0.5;
+    const colliderHalfD = quarterTurn ? w * 0.5 : d * 0.5;
+    addBoxCollider(x, z, colliderHalfW, colliderHalfD);
+    townBuildings.push({ label, x, z, halfW: colliderHalfW, halfD: colliderHalfD, rotation });
 
-    const doorZ = z + d * 0.5 + 1.1;
-    const action = enterArea ? () => enterInterior(enterArea, { x, z: doorZ + 1.4 }) : null;
+    const forwardX = Math.sin(rotation);
+    const forwardZ = Math.cos(rotation);
+    const doorDistance = d * 0.5 + 1.1;
+    const doorX = x + forwardX * doorDistance;
+    const doorZ = z + forwardZ * doorDistance;
+    const returnDistance = d * 0.5 + 2.5;
+    const action = enterArea ? () => enterInterior(enterArea, {
+      x: x + forwardX * returnDistance,
+      z: z + forwardZ * returnDistance
+    }) : null;
     registerInteraction({
-      x,
+      x: doorX,
       z: doorZ,
       radius: 4.2,
       prompt: prompt || (enterArea ? `Enter ${label}` : `Visit ${label}`),
@@ -689,16 +713,16 @@
   createTownBuilding({ x: -15, z: 23, w: 11, d: 8, h: 5.7, color: 0xf2b1ce, roofColor: 0x704f72, label: 'Cloud Nine Cafe', enterArea: 'cafe', awningColor: 0xffffff, icon: 'cup' });
 
   // Town services and kid-friendly shops.
-  createTownBuilding({ x: 48, z: 16, w: 13, d: 9, h: 6.3, color: 0xf4eee0, roofColor: 0xd34e4e, label: 'Toon Valley Clinic', icon: 'cross' });
-  createTownBuilding({ x: -49, z: -27, w: 14, d: 10, h: 6.8, color: 0xe95a53, roofColor: 0x3f5365, label: 'Fire Station' });
-  createTownBuilding({ x: 49, z: -27, w: 12, d: 8.5, h: 6.0, color: 0xa8d6e7, roofColor: 0x47627b, label: 'Post Office' });
-  createTownBuilding({ x: -50, z: 17, w: 15, d: 10, h: 6.5, color: 0xf0d070, roofColor: 0x6f4c3d, label: 'Rainbow Elementary' });
+  createTownBuilding({ x: 59, z: 16, w: 13, d: 9, h: 6.3, color: 0xf4eee0, roofColor: 0xd34e4e, label: 'Toon Valley Clinic', icon: 'cross', rotation: -Math.PI / 2 });
+  createTownBuilding({ x: -58, z: -25, w: 14, d: 10, h: 6.8, color: 0xe95a53, roofColor: 0x3f5365, label: 'Fire Station', rotation: Math.PI / 2 });
+  createTownBuilding({ x: 58, z: -25, w: 12, d: 8.5, h: 6.0, color: 0xa8d6e7, roofColor: 0x47627b, label: 'Post Office', rotation: -Math.PI / 2 });
+  createTownBuilding({ x: -59, z: 16, w: 15, d: 10, h: 6.5, color: 0xf0d070, roofColor: 0x6f4c3d, label: 'Rainbow Elementary', rotation: Math.PI / 2 });
   createTownBuilding({ x: 16, z: 23, w: 11, d: 8, h: 5.7, color: 0xa5df8c, roofColor: 0x4e735d, label: 'Happy Home Furnishings', enterArea: 'furnitureStore', awningColor: 0xff7a35 });
-  createTownBuilding({ x: 0, z: 53, w: 17, d: 10, h: 8.0, color: 0xb6b3ec, roofColor: 0x574d75, label: 'Moonbeam Theater', columns: 3 });
+  createTownBuilding({ x: 0, z: 53, w: 17, d: 10, h: 8.0, color: 0xb6b3ec, roofColor: 0x574d75, label: 'Moonbeam Theater', columns: 3, rotation: Math.PI });
 
   // Apartment buildings give the town a slightly denser Sims-like neighborhood.
-  createTownBuilding({ x: -64, z: 49, w: 15, d: 11, h: 10.5, color: 0xf2a67d, roofColor: 0x70463a, label: 'Maple Apartments', enterArea: 'home', prompt: 'Go home' });
-  createTownBuilding({ x: 64, z: 49, w: 15, d: 11, h: 10.5, color: 0x8fd0cf, roofColor: 0x3d6d70, label: 'Hilltop Apartments' });
+  createTownBuilding({ x: -64, z: 49, w: 15, d: 11, h: 10.5, color: 0xf2a67d, roofColor: 0x70463a, label: 'Maple Apartments', enterArea: 'home', prompt: 'Go home', rotation: Math.PI });
+  createTownBuilding({ x: 64, z: 49, w: 15, d: 11, h: 10.5, color: 0x8fd0cf, roofColor: 0x3d6d70, label: 'Hilltop Apartments', rotation: Math.PI });
 
   // Residential streets.
   const houses = [
@@ -745,6 +769,55 @@
   freeze(monument);
 
   // ---------- Park, playground, benches, market and flowers ----------
+  const benchSeats = [];
+
+  function setSeatedPose() {
+    const data = player.userData;
+    data.moving = 0;
+    data.bodyRoot.position.y = 0.08;
+    data.bodyRoot.rotation.z = 0;
+    data.legs[0].rotation.x = -1.12;
+    data.legs[1].rotation.x = -1.12;
+    data.arms[0].rotation.x = -0.22;
+    data.arms[1].rotation.x = -0.22;
+  }
+
+  function standUpFromSeat(showMessage = true) {
+    if (!state.seated) return false;
+    state.seated = false;
+    state.seat = null;
+    player.position.y = currentGroundHeight(player.position.x, player.position.z);
+    playerVelocity.set(0, 0, 0);
+    state.cameraReady = false;
+    animateCharacter(player, 0.016, 0);
+    if (showMessage) showToast('You stood up.', 1.2);
+    return true;
+  }
+
+  function sitOnBench(bench) {
+    if (!bench || state.area !== 'world') return;
+    if (state.seated) {
+      standUpFromSeat();
+      return;
+    }
+    const angle = bench.rotation.y;
+    player.position.set(
+      bench.position.x + Math.sin(angle) * 0.08,
+      bench.position.y + 0.62,
+      bench.position.z + Math.cos(angle) * 0.08
+    );
+    player.rotation.y = angle;
+    playerVelocity.set(0, 0, 0);
+    state.jumpVelocity = 0;
+    state.grounded = true;
+    state.seated = true;
+    state.seat = bench;
+    state.cameraReady = false;
+    setSeatedPose();
+    showToast('Taking a peaceful bench break. Move, jump, or use the bench to stand.', 2.8);
+    window.dispatchEvent(new CustomEvent('toonvalley:sit', { detail: { x: bench.position.x, z: bench.position.z } }));
+  }
+
   function createBench(x, z, rotation = 0) {
     const root = new THREE.Group();
     root.position.set(x, terrainHeight(x, z), z);
@@ -764,6 +837,14 @@
       root.add(leg);
     }
     scene.add(root);
+    benchSeats.push(root);
+    registerInteraction({
+      object: root,
+      radius: 3.2,
+      prompt: 'Sit on bench',
+      text: 'A comfortable Toon Valley bench.',
+      action: () => sitOnBench(root)
+    });
     freeze(root);
   }
 
@@ -815,9 +896,9 @@
     addBoxCollider(x, z, 1.8, 1.0);
     freeze(root);
   }
-  createStall(31, 26, 0xffdf3e);
-  createStall(38, 26, 0x55c8c2);
-  registerInteraction({ x: 34.5, z: 26, radius: 6.0, prompt: 'Browse market', text: 'Fresh berries, paper pinwheels, tiny plants, and handmade kites fill the market stalls.' });
+  createStall(28, 26, 0xffdf3e);
+  createStall(35, 26, 0x55c8c2);
+  registerInteraction({ x: 31.5, z: 26, radius: 6.0, prompt: 'Browse market', text: 'Fresh food and handmade home goods rotate through the outdoor market.' });
 
   // Flower beds are one draw call.
   const flowerGeo = new THREE.IcosahedronGeometry(0.18, 0);
@@ -1208,6 +1289,8 @@
     const b = areaBounds[area];
     if (!b) return;
     state.returnPoint = exteriorPoint || { x: player.position.x, z: player.position.z };
+    state.seated = false;
+    state.seat = null;
     state.area = area;
     interiorGroups[area].visible = true;
     interiorLight.position.set(b.cx, 6.3, b.cz);
@@ -1228,6 +1311,8 @@
     const previousArea = state.area;
     if (interiorGroups[previousArea]) interiorGroups[previousArea].visible = false;
     state.area = 'world';
+    state.seated = false;
+    state.seat = null;
     interiorLight.visible = false;
     player.position.set(point.x, terrainHeight(point.x, point.z), point.z);
     playerVelocity.set(0, 0, 0);
@@ -1336,6 +1421,11 @@
   document.addEventListener('keydown', (event) => {
     keys[event.code] = true;
     if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.code)) event.preventDefault();
+    if (event.code === 'Space' && !event.repeat) state.jumpQueued = true;
+    if (event.code === 'KeyC' && !event.repeat) {
+      state.sprintToggle = !state.sprintToggle;
+      showToast(state.sprintToggle ? 'Auto-run enabled.' : 'Auto-run disabled.', 1.4);
+    }
     if (event.code === 'KeyQ' && !event.repeat) applyQuality(state.quality === 'medium' ? 'low' : 'medium');
     if (event.code === 'KeyE' && !event.repeat) interact();
   });
@@ -1359,6 +1449,10 @@
   }
 
   function interact() {
+    if (state.seated) {
+      standUpFromSeat();
+      return;
+    }
     const nearest = findNearestInteraction();
     if (!nearest) {
       showToast('Nothing nearby to interact with.', 1.2);
@@ -1442,10 +1536,26 @@
   const sprintButton = document.getElementById('mobile-sprint');
   const jumpButton = document.getElementById('mobile-jump');
   const interactButton = document.getElementById('mobile-interact');
-  sprintButton.addEventListener('pointerdown', (e) => { state.mobileSprint = true; e.preventDefault(); });
-  ['pointerup', 'pointercancel', 'pointerleave'].forEach((type) => sprintButton.addEventListener(type, () => { state.mobileSprint = false; }));
-  jumpButton.addEventListener('pointerdown', (e) => { state.mobileJumpQueued = true; e.preventDefault(); });
-  interactButton.addEventListener('pointerdown', (e) => { interact(); e.preventDefault(); });
+
+  function setMobileSprint(active) {
+    state.mobileSprint = Boolean(active);
+    sprintButton.classList.toggle('active', state.mobileSprint);
+    sprintButton.setAttribute('aria-pressed', String(state.mobileSprint));
+    sprintButton.querySelector('small').textContent = state.mobileSprint ? 'RUNNING' : 'RUN';
+  }
+
+  sprintButton.addEventListener('click', (event) => {
+    setMobileSprint(!state.mobileSprint);
+    event.preventDefault();
+  });
+  jumpButton.addEventListener('click', (event) => {
+    state.mobileJumpQueued = true;
+    event.preventDefault();
+  });
+  interactButton.addEventListener('click', (event) => {
+    interact();
+    event.preventDefault();
+  });
 
   window.addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight;
@@ -1480,13 +1590,28 @@
     const inputMagnitude = Math.min(1, Math.hypot(forwardInput, sideInput));
     const hasInput = inputMagnitude > 0.04;
 
+    if (state.seated) {
+      const wantsToStand = hasInput || state.jumpQueued || state.mobileJumpQueued;
+      if (wantsToStand) {
+        state.jumpQueued = false;
+        state.mobileJumpQueued = false;
+        standUpFromSeat();
+      } else {
+        playerVelocity.set(0, 0, 0);
+        state.stamina = Math.min(1, state.stamina + dt * 0.22);
+        staminaFill.style.transform = `scaleX(${state.stamina.toFixed(3)})`;
+        setSeatedPose();
+        return;
+      }
+    }
+
     const forward = temp.v1.set(-Math.sin(state.yaw), 0, -Math.cos(state.yaw));
     const right = temp.v2.set(Math.cos(state.yaw), 0, -Math.sin(state.yaw));
     const desired = temp.v3.set(0, 0, 0);
     desired.addScaledVector(forward, forwardInput).addScaledVector(right, sideInput);
     if (desired.lengthSq() > 0) desired.normalize().multiplyScalar(inputMagnitude);
 
-    const wantsSprint = keys.ShiftLeft || keys.ShiftRight || state.mobileSprint;
+    const wantsSprint = keys.ShiftLeft || keys.ShiftRight || state.mobileSprint || state.sprintToggle;
     const sprinting = hasInput && wantsSprint && state.stamina > 0.02;
     const maxSpeed = sprinting ? 8.0 : 4.55;
     if (sprinting) state.stamina = Math.max(0, state.stamina - dt * 0.22);
@@ -1519,12 +1644,13 @@
     }
 
     const groundY = currentGroundHeight(player.position.x, player.position.z);
-    const jumpRequested = keys.Space || state.mobileJumpQueued;
+    const jumpRequested = state.jumpQueued || state.mobileJumpQueued;
     if (state.grounded && jumpRequested) {
       state.jumpVelocity = 7.4;
       state.grounded = false;
-      keys.Space = false;
+      state.jumpQueued = false;
       state.mobileJumpQueued = false;
+      keys.Space = false;
     }
     if (!state.grounded) {
       state.jumpVelocity -= 19.5 * dt;
@@ -1736,6 +1862,9 @@
     unitBox,
     terrainHeight,
     currentGroundHeight,
+    roadSegments,
+    townBuildings,
+    benchSeats,
     isBlocked,
     findSafeInteriorPosition,
     ensurePlayerSafePosition,
@@ -1753,6 +1882,10 @@
     createTownBuilding,
     createHouse,
     createCharacter,
+    sitOnBench,
+    standUpFromSeat,
+    setMobileSprint,
+    updatePlayer,
     createRoom,
     addInteriorBox,
     addInteriorTable,

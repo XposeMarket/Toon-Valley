@@ -31,6 +31,67 @@ try {
   await page.evaluate(() => document.querySelector('.life-close')?.click());
   await page.waitForSelector('.life-overlay', { state: 'detached' });
 
+  const coreRegression = await page.evaluate(() => {
+    const TV = window.ToonValley;
+    TV.state.modalOpen = true;
+
+    TV.player.position.set(0, TV.terrainHeight(0, 10), 10);
+    TV.state.area = 'world';
+    TV.state.grounded = true;
+    TV.state.jumpVelocity = 0;
+    document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', bubbles: true }));
+    const queuedJump = TV.state.jumpQueued;
+    TV.updatePlayer(0.016);
+    const jumped = !TV.state.grounded && TV.state.jumpVelocity > 0;
+
+    document.getElementById('mobile-sprint').click();
+    const sprintEnabled = TV.state.mobileSprint;
+    TV.state.mobileMoveY = 1;
+    TV.playerVelocity.set(0, 0, 0);
+    TV.updatePlayer(0.2);
+    const sprintSpeed = Math.hypot(TV.playerVelocity.x, TV.playerVelocity.z);
+    TV.setMobileSprint(false);
+    TV.state.mobileMoveY = 0;
+
+    TV.sitOnBench(TV.benchSeats[0]);
+    const seated = TV.state.seated;
+    const stood = TV.standUpFromSeat(false);
+
+    const overlaps = [];
+    for (const building of TV.townBuildings) {
+      const bx1 = building.x - building.halfW;
+      const bx2 = building.x + building.halfW;
+      const bz1 = building.z - building.halfD;
+      const bz2 = building.z + building.halfD;
+      for (const road of TV.roadSegments) {
+        const horizontal = Math.abs(road.z1 - road.z2) < 0.001;
+        const vertical = Math.abs(road.x1 - road.x2) < 0.001;
+        if (!horizontal && !vertical) continue;
+        const rx1 = Math.min(road.x1, road.x2) - (vertical ? road.width * 0.5 : 0);
+        const rx2 = Math.max(road.x1, road.x2) + (vertical ? road.width * 0.5 : 0);
+        const rz1 = Math.min(road.z1, road.z2) - (horizontal ? road.width * 0.5 : 0);
+        const rz2 = Math.max(road.z1, road.z2) + (horizontal ? road.width * 0.5 : 0);
+        if (bx1 < rx2 && bx2 > rx1 && bz1 < rz2 && bz2 > rz1) {
+          overlaps.push({ building: building.label, road });
+        }
+      }
+    }
+
+    TV.state.modalOpen = false;
+    return { queuedJump, jumped, sprintEnabled, sprintSpeed, seated, stood, overlaps };
+  });
+  if (!coreRegression.queuedJump || !coreRegression.jumped) throw new Error(`Jump input regression: ${JSON.stringify(coreRegression)}`);
+  if (!coreRegression.sprintEnabled || coreRegression.sprintSpeed < 5.2) throw new Error(`Sprint input regression: ${JSON.stringify(coreRegression)}`);
+  if (!coreRegression.seated || !coreRegression.stood) throw new Error(`Bench sitting regression: ${JSON.stringify(coreRegression)}`);
+  if (coreRegression.overlaps.length) throw new Error(`Buildings overlap roads: ${JSON.stringify(coreRegression.overlaps)}`);
+
+  await page.evaluate(() => window.ToonValleyLife.openOutdoorMarket());
+  await page.waitForSelector('[data-market-buy]', { state: 'visible' });
+  const marketCount = await page.locator('[data-market-buy]').count();
+  if (marketCount < 4) throw new Error(`Outdoor market only exposed ${marketCount} purchasable items`);
+  await page.evaluate(() => document.querySelector('.life-close')?.click());
+  await page.waitForSelector('.life-overlay', { state: 'detached' });
+
   const supportsInteriorRecovery = await page.evaluate(() => typeof window.ToonValley.ensurePlayerSafePosition === 'function');
   if (!remoteURL || supportsInteriorRecovery) {
     const storeState = await page.evaluate(() => {

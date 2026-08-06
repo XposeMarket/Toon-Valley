@@ -84,6 +84,9 @@ button { font: inherit; }
 .mobile-button small { display: block; margin-top: 2px; font-size: 9px; letter-spacing: .08em; }
 .mobile-button:active { transform: translateY(3px) scale(.97); box-shadow: 0 2px 0 rgba(0,0,0,.28); }
 .mobile-button.sprint { right: calc(112px + var(--safe-right)); bottom: calc(22px + var(--safe-bottom)); }
+.mobile-button.sprint.active { background: rgba(83, 207, 105, .9); box-shadow: 0 0 0 5px rgba(255,255,255,.22), 0 5px 0 rgba(0,0,0,.28); }
+.mobile-button.sprint.active span { animation: runBounce .45s ease-in-out infinite alternate; }
+@keyframes runBounce { from { transform: translateY(0); } to { transform: translateY(-3px); } }
 .mobile-button.jump { right: calc(25px + var(--safe-right)); bottom: calc(38px + var(--safe-bottom)); width: 76px; height: 76px; background: rgba(255,124,58,.82); }
 .mobile-button.interact { right: calc(38px + var(--safe-right)); bottom: calc(126px + var(--safe-bottom)); background: rgba(84,190,104,.78); opacity: .58; }
 .mobile-button.interact.ready { opacity: 1; animation: readyPulse 1.15s ease-in-out infinite alternate; }
