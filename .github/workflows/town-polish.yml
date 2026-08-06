@@ -39,3 +39,5 @@ jobs:
           git add game.js life.js style.css index.html sw.js tests/smoke.mjs
           git commit -m 'Fix controls seating market and town layout'
           git push
+
+# retry after verifying payload lengths
