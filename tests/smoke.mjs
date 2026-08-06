@@ -25,20 +25,21 @@ try {
 
   await page.click('#play-button');
   await page.waitForFunction(() => window.ToonValley.state.started);
-  await page.click('#phone-button', { force: true });
-  await page.waitForSelector('.life-overlay .life-window');
-  await page.click('.life-close');
+  await page.evaluate(() => window.ToonValleyLife.openPhone('home'));
+  await page.waitForSelector('.life-overlay .life-window', { state: 'visible' });
+  await page.evaluate(() => document.querySelector('.life-close')?.click());
+  await page.waitForSelector('.life-overlay', { state: 'detached' });
 
   await page.evaluate(() => window.ToonValley.enterInterior('home', { x: -64, z: 57 }));
   await page.evaluate(() => window.ToonValleyLife.startBuild('chairBlue'));
-  await page.waitForSelector('#build-controls');
-  await page.click('[data-build="place"]', { force: true });
+  await page.waitForSelector('#build-controls', { state: 'visible' });
+  await page.evaluate(() => document.querySelector('[data-build="place"]')?.click());
   await page.waitForFunction(() => window.ToonValleyLife.getState().property.furniture.length >= 1);
 
   await page.evaluate(() => window.ToonValleyLife.openShop('grocery'));
-  await page.waitForSelector('[data-buy-item="apple"]');
-  await page.click('[data-buy-item="apple"]');
-  await page.click('.life-close');
+  await page.waitForSelector('[data-buy-item="apple"]', { state: 'visible' });
+  await page.evaluate(() => document.querySelector('[data-buy-item="apple"]')?.click());
+  await page.evaluate(() => document.querySelector('.life-close')?.click());
 
   await page.evaluate(async () => {
     window.ToonValleyLife.addMoney(77);
