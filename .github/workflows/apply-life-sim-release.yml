@@ -63,7 +63,7 @@ jobs:
             test -s manifest.webmanifest
             test -s icon.svg
             test -s vercel.json
-            ! grep -RniE 'TODO|FIXME|placeholder|coming soon|not implemented|full build' --exclude-dir=.git --exclude='*.md' .
+            ! grep -RniE 'TODO|FIXME|placeholder|coming soon|not implemented|full build' --exclude-dir=.git --exclude-dir=.github --exclude='*.md' .
           done
 
       - name: Commit game files without workflow mutation
