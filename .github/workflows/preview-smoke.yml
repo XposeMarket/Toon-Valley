@@ -17,6 +17,30 @@ jobs:
           node-version: 22
       - run: npm install --no-save playwright@1.55.0
       - run: npx playwright install --with-deps chromium
-      - run: node tests/smoke.mjs
-        env:
-          BASE_URL: https://toon-valley-5km1fmj2z-xpose-markets-projects.vercel.app
+      - name: Diagnose preview boot
+        run: |
+          cat > /tmp/preview-diagnostic.mjs <<'EOF'
+          import { chromium } from 'playwright';
+          const url = 'https://toon-valley-5km1fmj2z-xpose-markets-projects.vercel.app';
+          const browser = await chromium.launch({ headless: true, args: ['--use-gl=swiftshader', '--enable-webgl'] });
+          const page = await browser.newPage({ viewport: { width: 1280, height: 760 } });
+          const events = [];
+          page.on('console', m => events.push(`console:${m.type()}: ${m.text()}`));
+          page.on('pageerror', e => events.push(`pageerror: ${e.stack || e.message}`));
+          page.on('requestfailed', r => events.push(`requestfailed: ${r.url()} :: ${r.failure()?.errorText}`));
+          page.on('response', r => { if (r.status() >= 400) events.push(`response:${r.status()}: ${r.url()}`); });
+          await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+          await page.waitForTimeout(20000);
+          const state = await page.evaluate(() => ({
+            detail: document.getElementById('boot-detail')?.textContent,
+            three: Boolean(window.THREE),
+            game: Boolean(window.ToonValley),
+            life: Boolean(window.ToonValleyLife),
+            bootPresent: Boolean(document.getElementById('boot-status')),
+            loadError: !document.getElementById('load-error')?.classList.contains('hidden')
+          }));
+          console.log(JSON.stringify({ state, events }, null, 2));
+          await browser.close();
+          if (!state.game || !state.life) process.exit(1);
+          EOF
+          node /tmp/preview-diagnostic.mjs
