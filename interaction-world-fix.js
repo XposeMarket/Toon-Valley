@@ -8,6 +8,7 @@
     const proxy = {
       position: new TV.THREE.Vector3(),
       get userData() { return source.userData; },
+      set userData(value) { source.userData = value; },
       get children() { return source.children; },
       get parent() { return source.parent; },
       clear() { source.clear(); return proxy; },
