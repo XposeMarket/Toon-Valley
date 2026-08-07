@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const read=(name)=>fs.readFileSync(new URL(`../${name}`,import.meta.url),'utf8');
+const pub=read('public-interiors.js'),theater=read('moonbeam-theater.js'),home=read('owned-home.js'),lake=read('bluebell-lake.js');
+for(const area of ['clinic','fireStation','postOffice','school']) assert.match(pub,new RegExp(`ensure\\('${area}'`));
+for(const label of ['Toon Valley Clinic','Fire Station','Post Office','Rainbow Elementary']) assert.match(pub,new RegExp(label));
+assert.match(pub,/Browse homes & property/);assert.match(pub,/upgradedExisting:5/);
+assert.match(theater,/Moon Rabbit Express/);assert.match(theater,/The Great Berry Bake/);assert.match(theater,/Boat Day at Bluebell Lake/);assert.equal((theater.match(/duration:120/g)||[]).length,3);assert.match(theater,/new THREE\.CanvasTexture/);assert.match(theater,/Sit for the movie/);assert.match(theater,/Buy ticket \/ see a film/);assert.match(theater,/films:FILMS\.length,seats:seats\.length/);
+assert.match(home,/LOT=\{x:-51,z:66/);assert.match(home,/Enter your home/);assert.match(home,/Browse paintings & decor/);assert.match(home,/Arrange paintings & decor/);for(const id of ['sunsetPainting','mountainPainting','roundMirror','tallPlant','flowerVase','aquarium','petBed','catTree','readingLamp','sideTable'])assert.match(home,new RegExp(id));assert.match(home,/Miso the Cat/);assert.match(home,/Biscuit the Dog/);assert.match(home,/homeUpgraded:1/);
+assert.match(lake,/old\.position\.set\(-99/);assert.match(lake,/LAKE=\{x:126,z:-100/);assert.match(lake,/Board wooden rowboat/);assert.match(lake,/boat-fishing/);assert.match(lake,/counts:\{lakes:1,boats:1\}/);
+console.log('valley expansion static checks passed');
