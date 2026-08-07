@@ -5,19 +5,14 @@
   Object.assign(TV.CONFIG.mobile,{pixelRatio:1.9,minPixelRatio:1.3,far:215,grass:Math.max(TV.CONFIG.mobile.grass,760),trees:Math.max(TV.CONFIG.mobile.trees,110),rocks:Math.max(TV.CONFIG.mobile.rocks,56),npcs:Math.max(TV.CONFIG.mobile.npcs,14),flowers:Math.max(TV.CONFIG.mobile.flowers,104),lamps:Math.max(TV.CONFIG.mobile.lamps,30),targetFPS:30});
   TV.CONFIG.low.pixelRatio=Math.max(TV.CONFIG.low.pixelRatio,1.65);TV.CONFIG.low.minPixelRatio=Math.max(TV.CONFIG.low.minPixelRatio,1.2);TV.CONFIG.medium.pixelRatio=Math.max(TV.CONFIG.medium.pixelRatio,2);TV.CONFIG.medium.minPixelRatio=Math.max(TV.CONFIG.medium.minPixelRatio,1.35);
   TV.renderer.domElement.style.imageRendering='auto';TV.renderer.domElement.style.transform='translateZ(0)';TV.renderer.domElement.style.backfaceVisibility='hidden';
-
-  // Configure the sharp preset immediately, but do not force a large WebGL backing
-  // buffer behind the start screen. Applying it on entry removes a big iPhone/Safari
-  // boot hitch while preserving the same in-game visual resolution.
-  let sharpApplied=false;const applySharp=()=>{if(sharpApplied)return;sharpApplied=true;setTimeout(()=>TV.applyQuality(TV.state.quality),0)};
-  if(TV.state.started)applySharp();else document.getElementById('play-button')?.addEventListener('click',applySharp,{once:true});
+  let sharpApplied=false;const applySharp=()=>{if(sharpApplied)return;sharpApplied=true;setTimeout(()=>TV.applyQuality(TV.state.quality),0)};if(TV.state.started)applySharp();else document.getElementById('play-button')?.addEventListener('click',applySharp,{once:true});
 
   const lookPad=document.getElementById('look-pad'),sprint=document.getElementById('mobile-sprint');let lookPointer=null,lookX=0,lookY=0,lookPitch=TV.state.pitch;
   const inside=(el,target)=>el&&(target===el||el.contains(target));
-  document.addEventListener('pointerdown',e=>{
-    if(inside(sprint,e.target)){TV.setMobileSprint(!TV.state.mobileSprint);sprint.classList.toggle('active',TV.state.mobileSprint);sprint.setAttribute('aria-pressed',String(TV.state.mobileSprint));e.preventDefault();e.stopImmediatePropagation();return;}
-    if(inside(lookPad,e.target)&&lookPointer===null){lookPointer=e.pointerId;lookX=e.clientX;lookY=e.clientY;lookPitch=TV.state.pitch;lookPad.setPointerCapture?.(e.pointerId);e.preventDefault();e.stopImmediatePropagation();}
-  },true);
+  // Own the synthesized click once in capture phase. The previous pointerdown fix
+  // toggled Run and then the core click listener toggled it straight back off.
+  document.addEventListener('click',e=>{if(!inside(sprint,e.target))return;TV.setMobileSprint(!TV.state.mobileSprint);e.preventDefault();e.stopImmediatePropagation();},true);
+  document.addEventListener('pointerdown',e=>{if(inside(lookPad,e.target)&&lookPointer===null){lookPointer=e.pointerId;lookX=e.clientX;lookY=e.clientY;lookPitch=TV.state.pitch;lookPad.setPointerCapture?.(e.pointerId);e.preventDefault();e.stopImmediatePropagation();}},true);
   document.addEventListener('pointermove',e=>{if(e.pointerId!==lookPointer)return;const dx=e.clientX-lookX,dy=e.clientY-lookY;lookX=e.clientX;lookY=e.clientY;TV.state.yaw-=dx*.0062;lookPitch=Math.max(-.5,Math.min(.55,lookPitch+dy*.0044));TV.state.pitch=lookPitch;e.preventDefault();e.stopImmediatePropagation();},true);
   const endLook=e=>{if(e.pointerId!==lookPointer)return;lookPointer=null;e.preventDefault();e.stopImmediatePropagation();};document.addEventListener('pointerup',endLook,true);document.addEventListener('pointercancel',endLook,true);
 
