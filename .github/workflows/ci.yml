@@ -23,15 +23,21 @@ jobs:
           node --check valley-services.js
           node --check valley-routines.js
           node --check central-plaza.js
+          node --check public-interiors.js
+          node --check moonbeam-theater.js
+          node --check owned-home.js
+          node --check bluebell-lake.js
           node --check sw.js
           node --check tests/smoke.mjs
           node --check tests/extensions-runtime.mjs
           node --check tests/production-extensions.mjs
+          node --check tests/valley-expansion-static.mjs
           node tests/world-events-static.mjs
           node tests/town-activities-static.mjs
           node tests/valley-services-static.mjs
           node tests/valley-routines-static.mjs
           node tests/central-plaza-static.mjs
+          node tests/valley-expansion-static.mjs
       - name: Install browser test runtime
         run: |
           npm install --no-save playwright@1.55.0
