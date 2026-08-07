@@ -5,7 +5,7 @@
   const localBase = directScript ? new URL('.', document.currentScript.src).href : repoBase;
   const files = directScript
     ? ['central-plaza-core.js']
-    : ['central-plaza-core.js','public-interiors.js','moonbeam-theater.js','owned-home.js','bluebell-lake.js','interaction-world-fix.js','valley-transit.js','community-garden.js'];
+    : ['central-plaza-core.js','public-interiors.js','moonbeam-theater.js','owned-home.js','bluebell-lake.js','interaction-world-fix.js','valley-transit.js','community-garden.js','valley-community-life.js'];
   const loaded = {
     'central-plaza-core.js': () => window.ToonValleyCentralPlaza,
     'public-interiors.js': () => window.ToonValleyPublicInteriors,
@@ -14,7 +14,8 @@
     'bluebell-lake.js': () => window.ToonValleyBluebellLake,
     'interaction-world-fix.js': () => window.ToonValleyInteractionFix,
     'valley-transit.js': () => window.ToonValleyTransit,
-    'community-garden.js': () => window.ToonValleyCommunityGarden
+    'community-garden.js': () => window.ToonValleyCommunityGarden,
+    'valley-community-life.js': () => window.ToonValleyCommunityLife
   };
   async function boot() {
     for (const file of files) {
