@@ -41,12 +41,15 @@ jobs:
           node --check valley-community-life.js
           node --check living-interiors.js
           node --check interaction-experience.js
+          node --check swing-exit-fix.js
+          node --check npc-building-life.js
           node --check mobile-polish.js
           node --check camera-experience-polish.js
           node --check sw.js
           node --check tests/smoke.mjs
           node --check tests/mobile-smoke.mjs
           node --check tests/extensions-runtime.mjs
+          node --check tests/npc-swing-runtime.mjs
           node --check tests/production-extensions.mjs
           node --check tests/valley-expansion-static.mjs
           node --check tests/daily-build-static.mjs
@@ -67,6 +70,8 @@ jobs:
         run: timeout 150s node tests/mobile-smoke.mjs
       - name: World extension runtime test
         run: timeout 150s node tests/extensions-runtime.mjs
+      - name: Swing and NPC building runtime test
+        run: timeout 150s node tests/npc-swing-runtime.mjs
       - name: Local browser smoke test
         run: timeout 150s node tests/smoke.mjs
       - name: Production mobile browser check
