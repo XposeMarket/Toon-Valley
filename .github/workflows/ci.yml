@@ -26,6 +26,7 @@ jobs:
           node --check sw.js
           node --check tests/smoke.mjs
           node --check tests/extensions-runtime.mjs
+          node --check tests/production-extensions.mjs
           node tests/world-events-static.mjs
           node tests/town-activities-static.mjs
           node tests/valley-services-static.mjs
@@ -43,3 +44,7 @@ jobs:
         env:
           BASE_URL: https://toon-valley.vercel.app
         run: node tests/smoke.mjs
+      - name: Production world extension verification
+        env:
+          BASE_URL: https://toon-valley.vercel.app
+        run: node tests/production-extensions.mjs
