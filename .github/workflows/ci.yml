@@ -61,22 +61,22 @@ jobs:
         run: |
           npm install --no-save playwright@1.55.0
           npx playwright install --with-deps chromium
-      - name: Local browser smoke test
-        run: node tests/smoke.mjs
       - name: Mobile browser smoke test
-        run: node tests/mobile-smoke.mjs
+        run: timeout 150s node tests/mobile-smoke.mjs
       - name: World extension runtime test
-        run: node tests/extensions-runtime.mjs
-      - name: Production browser health check
-        env:
-          BASE_URL: https://toon-valley.vercel.app
-        run: node tests/smoke.mjs
+        run: timeout 150s node tests/extensions-runtime.mjs
+      - name: Local browser smoke test
+        run: timeout 150s node tests/smoke.mjs
       - name: Production mobile browser check
         env:
           BASE_URL: https://toon-valley.vercel.app
-        run: node tests/mobile-smoke.mjs
+        run: timeout 150s node tests/mobile-smoke.mjs
+      - name: Production browser health check
+        env:
+          BASE_URL: https://toon-valley.vercel.app
+        run: timeout 150s node tests/smoke.mjs
       - name: Production world extension verification
         env:
           BASE_URL: https://toon-valley.vercel.app
           EXPECTED_COMMIT: ${{ github.sha }}
-        run: node tests/production-extensions.mjs
+        run: timeout 150s node tests/production-extensions.mjs
