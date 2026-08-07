@@ -36,13 +36,13 @@
   function nearestStopTo(x,z) { let best=0,dist=Infinity;stops.forEach((s,i)=>{const d=Math.hypot(x-s.x,z-s.z);if(d<dist){dist=d;best=i;}});return { index:best, distance:dist }; }
   function routeDistanceTo(stop) { return Math.hypot(bus.position.x-stop.x,bus.position.z-stop.z); }
   function waitAt(stop) {
-    const d=routeDistanceTo(stop);
-    if (d < 8) return board(stop);
+    const d=routeDistanceTo(stop), near=nearestStopTo(bus.position.x,bus.position.z);
+    if (d < 8 && dwell > 0 && stops[near.index] === stop) return board(stop);
     const estimate=Math.max(1,Math.round(d/18));
-    TV.showToast(`🚌 Valley Shuttle is about ${estimate} minute${estimate===1?'':'s'} away. Watch for the blue bus.`,2.7);
+    TV.showToast(`🚌 Valley Shuttle is about ${estimate} minute${estimate===1?'':'s'} away. Wait until it fully stops.`,2.7);
   }
   function board(stop) {
-    if (riding) return;
+    if (riding || dwell <= 0) return;
     riding=true;
     TV.playerVelocity.set(0,0,0); TV.state.jumpVelocity=0; TV.state.grounded=true; TV.state.cameraReady=false;
     TV.showToast(`🚌 Riding from ${stop.name}. Press E to get off when the shuttle pauses at a stop.`,3.2);
@@ -71,6 +71,6 @@
     bus.rotation.y=Math.atan2(p1[0]-p0[0],p1[1]-p0[1]);
   }
   TV.registerUpdateHook(dt=>{clock+=dt;advanceBus(dt);body.position.y=1.55+Math.sin(clock*5)*.015;if(riding){TV.player.position.set(bus.position.x,bus.position.y+.85,bus.position.z);TV.player.rotation.y=bus.rotation.y;TV.playerVelocity.set(0,0,0);TV.state.jumpVelocity=0;TV.state.grounded=true;TV.state.cameraReady=false;}});
-  window.ToonValleyTransit=Object.freeze({counts:{stops:stops.length,buses:1},stops,bus,get riding(){return riding;}});
+  window.ToonValleyTransit=Object.freeze({counts:{stops:stops.length,buses:1},stops,bus,get riding(){return riding;},get stopped(){return dwell>0;}});
   console.info('Valley Shuttle ready',window.ToonValleyTransit.counts);
 })();
