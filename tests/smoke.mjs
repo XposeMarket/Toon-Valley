@@ -18,7 +18,7 @@ const waitModalClosed=()=>page.waitForFunction(()=>{const el=document.querySelec
 try {
   checkpoint('navigate');
   await page.goto(remoteURL || 'http://127.0.0.1:4173', { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => window.ToonValley && window.ToonValleyLife);
+  await page.waitForFunction(() => window.ToonValley && window.ToonValleyLife && window.ToonValleyUILayerFix);
   await page.waitForSelector('#life-hud');
   checkpoint('core ready');
   const initial = await page.evaluate(() => window.ToonValleyLife.getState());
@@ -26,7 +26,7 @@ try {
   if (initial.player.money < 1) throw new Error('Player economy did not initialize');
   await page.click('#play-button'); await page.waitForFunction(() => window.ToonValley.state.started);
   checkpoint('entered game');
-  await page.click('#phone-button');
+  await page.keyboard.press('KeyP');
   await page.waitForSelector('.life-overlay .life-window', { state: 'visible' });
   await page.click('.life-close');
   await waitModalClosed();
