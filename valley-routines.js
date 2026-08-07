@@ -32,6 +32,20 @@
   function currentErrand() { return errands[Math.abs(day()) % errands.length]; }
   function resetForDay(){const today=day();if(state.errandDay===today)return false;state.errandDay=today;state.accepted=false;state.stage=0;state.completed=false;save();return true}
 
+  function handleNoticeBoard(){
+    resetForDay();const task=currentErrand();
+    if(state.completed){TV.showToast(`✅ ${task.name} is signed off for today.`,2.2);return state.stage}
+    if(!state.accepted){state.accepted=true;state.stage=1;save();TV.showToast(`${task.icon} Job accepted: ${task.name}. First, go to the ${task.pickup.label} and collect the item.`,3.6);return state.stage}
+    if(state.stage===3){state.completed=true;state.stage=4;save();Life.addMoney(task.reward,task.name);Life.emitProgress('help',2,{activity:'notice-board',task:task.name});TV.showToast(`✅ Job signed off! ${task.name} complete · +$${task.reward}`,3);return state.stage}
+    TV.showToast(state.stage===1?`${task.icon} ${task.name}: collect the item at the ${task.pickup.label}.`:`${task.icon} ${task.name}: deliver it to ${task.target.label}, then return here for sign-off.`,3);return state.stage
+  }
+  function handleTaskPoint(kind){
+    const task=currentErrand();
+    if(kind==='pickup'&&state.accepted&&!state.completed&&state.stage===1){state.stage=2;save();TV.showToast(`${task.icon} ${task.pickup.prompt}. Item collected — now take it across town to ${task.target.label}.`,3.5);return true}
+    if(kind==='target'&&state.accepted&&!state.completed&&state.stage===2){state.stage=3;save();TV.showToast(`${task.icon} ${task.thanks} Return to the notice board to finish the job.`,4);return true}
+    return false
+  }
+
   function makeMarker(color=0xf3d45b){const group=new THREE.Group();const ring=new THREE.Mesh(new THREE.TorusGeometry(.55,.08,6,16),TV.mat(color));ring.rotation.x=Math.PI/2;ring.position.y=.16;group.add(ring);const bar=TV.outlinedMesh(TV.unitBox,TV.mat(color),1.04);bar.scale.set(.14,.62,.14);bar.position.y=1.35;group.add(bar);const dot=TV.outlinedMesh(new THREE.SphereGeometry(.14,8,6),TV.mat(color),1.04);dot.position.y=.76;group.add(dot);return group}
 
   function makeNoticeBoard(){
@@ -40,23 +54,13 @@
     const board=TV.outlinedMesh(TV.unitBox,TV.mat(0xd8b46a),1.035);board.scale.set(1.8,1.05,.12);board.position.y=1.55;group.add(board);
     const paper=new THREE.Mesh(TV.unitBox,TV.materials.white||TV.mat(0xf5f0df));paper.scale.set(1.18,.68,.03);paper.position.set(0,1.58,.15);group.add(paper);
     group.position.set(9,TV.terrainHeight(9,24),24);TV.scene.add(group);
-    TV.registerInteraction({object:group,radius:3,area:'world',prompt:'Check community notice board',enabled:()=>true,action:()=>{
-      resetForDay();const task=currentErrand();
-      if(state.completed){TV.showToast(`✅ ${task.name} is signed off for today.`,2.2);return}
-      if(!state.accepted){state.accepted=true;state.stage=1;save();TV.showToast(`${task.icon} Job accepted: ${task.name}. First, go to the ${task.pickup.label} and collect the item.`,3.6);return}
-      if(state.stage===3){state.completed=true;state.stage=4;save();Life.addMoney(task.reward,task.name);Life.emitProgress('help',2,{activity:'notice-board',task:task.name});TV.showToast(`✅ Job signed off! ${task.name} complete · +$${task.reward}`,3);return}
-      TV.showToast(state.stage===1?`${task.icon} ${task.name}: collect the item at the ${task.pickup.label}.`:`${task.icon} ${task.name}: deliver it to ${task.target.label}, then return here for sign-off.`,3);
-    }});return group;
+    TV.registerInteraction({object:group,radius:3,area:'world',prompt:'Check community notice board',enabled:()=>true,action:handleNoticeBoard});return group;
   }
 
   function makeTaskPoint(kind){
     const group=makeMarker(kind==='pickup'?0x5eb5df:0xf3d45b);TV.scene.add(group);
     const sync=()=>{const point=currentErrand()[kind];group.position.set(point.x,TV.terrainHeight(point.x,point.z),point.z)};sync();
-    TV.registerInteraction({object:group,radius:3,area:'world',prompt:kind==='pickup'?'Pick up errand item':'Make errand delivery',enabled:()=>state.accepted&&!state.completed&&((kind==='pickup'&&state.stage===1)||(kind==='target'&&state.stage===2)),action:()=>{
-      const task=currentErrand();
-      if(kind==='pickup'&&state.stage===1){state.stage=2;save();TV.showToast(`${task.icon} ${task.pickup.prompt}. Item collected — now take it across town to ${task.target.label}.`,3.5)}
-      else if(kind==='target'&&state.stage===2){state.stage=3;save();TV.showToast(`${task.icon} ${task.thanks} Return to the notice board to finish the job.`,4)}
-    }});return{group,sync};
+    TV.registerInteraction({object:group,radius:3,area:'world',prompt:kind==='pickup'?'Pick up errand item':'Make errand delivery',enabled:()=>state.accepted&&!state.completed&&((kind==='pickup'&&state.stage===1)||(kind==='target'&&state.stage===2)),action:()=>handleTaskPoint(kind)});return{group,sync};
   }
 
   function makeStreetLamp(x,z){const group=new THREE.Group(),metal=TV.mat(0x3f4650);const pole=new THREE.Mesh(new THREE.CylinderGeometry(.055,.08,2.8,7),metal);pole.position.y=1.4;group.add(pole);const arm=new THREE.Mesh(new THREE.CylinderGeometry(.035,.035,.65,6),metal);arm.rotation.z=Math.PI/2;arm.position.set(.28,2.65,0);group.add(arm);const bulbMat=new THREE.MeshBasicMaterial({color:0x6f7680}),bulb=new THREE.Mesh(new THREE.SphereGeometry(.16,8,6),bulbMat);bulb.position.set(.57,2.58,0);group.add(bulb);group.position.set(x,TV.terrainHeight(x,z),z);TV.scene.add(group);return{group,bulbMat}}
@@ -68,6 +72,6 @@
   updateLampVisuals();
   TV.registerUpdateHook(dt=>{elapsed+=dt;floatClock+=dt;pickupPoint.group.position.y=TV.terrainHeight(pickupPoint.group.position.x,pickupPoint.group.position.z)+Math.sin(floatClock*2.4)*.08;targetPoint.group.position.y=TV.terrainHeight(targetPoint.group.position.x,targetPoint.group.position.z)+Math.sin(floatClock*2.4+1)*.08;pickupPoint.group.visible=state.accepted&&!state.completed&&state.stage===1;targetPoint.group.visible=state.accepted&&!state.completed&&state.stage===2;if(elapsed<1)return;elapsed=0;const today=day();if(today!==lastDay){lastDay=today;resetForDay();pickupPoint.sync();targetPoint.sync()}updateLampVisuals()});
 
-  window.ToonValleyRoutines={getState:()=>JSON.parse(JSON.stringify(state)),getCurrentErrand:()=>({...currentErrand()}),counts:{streetLamps:lamps.length,errands:errands.length},noticeBoard,questStyle:'accept-pickup-deliver-return-signoff'};
+  window.ToonValleyRoutines={getState:()=>JSON.parse(JSON.stringify(state)),getCurrentErrand:()=>({...currentErrand()}),counts:{streetLamps:lamps.length,errands:errands.length},noticeBoard,handleNoticeBoard,pickupErrandItem:()=>handleTaskPoint('pickup'),deliverErrandItem:()=>handleTaskPoint('target'),questStyle:'accept-pickup-deliver-return-signoff'};
   console.info('Toon Valley routines ready',window.ToonValleyRoutines.counts);
 })();
