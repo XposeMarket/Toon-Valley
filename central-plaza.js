@@ -5,17 +5,19 @@
   const localBase = directScript ? new URL('.', document.currentScript.src).href : repoBase;
   const files = directScript
     ? ['central-plaza-core.js']
-    : ['central-plaza-core.js','public-interiors.js','moonbeam-theater.js','owned-home.js','bluebell-lake.js','interaction-world-fix.js','valley-transit.js','community-garden.js','valley-community-life.js','mobile-polish.js'];
+    : ['central-plaza-core.js','public-interiors.js','moonbeam-theater.js','owned-home.js','world-polish.js','bluebell-lake.js','interaction-world-fix.js','valley-transit.js','community-garden.js','valley-community-life.js','living-interiors.js','mobile-polish.js'];
   const loaded = {
     'central-plaza-core.js': () => window.ToonValleyCentralPlaza,
     'public-interiors.js': () => window.ToonValleyPublicInteriors,
     'moonbeam-theater.js': () => window.ToonValleyTheater,
     'owned-home.js': () => window.ToonValleyOwnedHome,
+    'world-polish.js': () => window.ToonValleyWorldPolish,
     'bluebell-lake.js': () => window.ToonValleyBluebellLake,
     'interaction-world-fix.js': () => window.ToonValleyInteractionFix,
     'valley-transit.js': () => window.ToonValleyTransit,
     'community-garden.js': () => window.ToonValleyCommunityGarden,
     'valley-community-life.js': () => window.ToonValleyCommunityLife,
+    'living-interiors.js': () => window.ToonValleyLivingInteriors,
     'mobile-polish.js': () => window.ToonValleyMobilePolish
   };
   async function boot() {
