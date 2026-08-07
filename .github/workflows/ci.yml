@@ -30,6 +30,7 @@ jobs:
           node tests/town-activities-static.mjs
           node tests/valley-services-static.mjs
           node tests/valley-routines-static.mjs
+          node tests/central-plaza-static.mjs
       - name: Install browser test runtime
         run: |
           npm install --no-save playwright@1.55.0
