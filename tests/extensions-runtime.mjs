@@ -15,6 +15,10 @@ try {
   const state = await page.evaluate(() => ({
     plazaTables: window.ToonValleyCentralPlaza.picnicTables,
     plazaVisible: window.ToonValleyCentralPlaza.root.visible,
+    swingSeats: window.ToonValleyCentralPlaza.swingSeats,
+    dogs: window.ToonValleyCentralPlaza.dogs,
+    playgroundVisible: window.ToonValleyCentralPlaza.playground.visible,
+    dogParkVisible: window.ToonValleyCentralPlaza.dogPark.visible,
     routines: Boolean(window.ToonValleyRoutines),
     activities: Boolean(window.ToonValleyTownActivities),
     events: Boolean(window.ToonValleyWorldEvents),
@@ -22,8 +26,9 @@ try {
     interactables: window.ToonValley.interactables.length
   }));
   if (state.plazaTables !== 4 || !state.plazaVisible) throw new Error(`Central plaza did not initialize: ${JSON.stringify(state)}`);
+  if (state.swingSeats !== 2 || state.dogs !== 3 || !state.playgroundVisible || !state.dogParkVisible) throw new Error(`Plaza park additions did not initialize: ${JSON.stringify(state)}`);
   if (!state.routines || !state.activities || !state.events || !state.services) throw new Error(`World extension missing: ${JSON.stringify(state)}`);
-  if (state.interactables < 20) throw new Error(`Suspiciously low interaction count: ${state.interactables}`);
+  if (state.interactables < 24) throw new Error(`Suspiciously low interaction count: ${state.interactables}`);
   if (errors.length) throw new Error(errors.join('\n'));
   console.log('Toon Valley extension runtime checks passed', state);
 } finally {
