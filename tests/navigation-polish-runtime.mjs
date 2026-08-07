@@ -16,9 +16,7 @@ await page.addInitScript(()=>{
 try{
  await page.goto(base,{waitUntil:'domcontentloaded',timeout:60000});
  await page.waitForFunction(()=>window.ToonValleyNavigationPolish&&window.ToonValleyTransit&&window.ToonValleyCommunityLife&&window.ToonValleyBluebellLake&&window.ToonValleyTownActivities&&window.ToonValleyUILayerFix,null,{timeout:45000});
- // ToonValleyLife is exported before its async save load/injectUI boot finishes.
- // Wait for the real Tasks HUD control so the save/UI layer is definitely ready.
- await page.waitForSelector('#tasks-button',{state:'attached',timeout:15000});
+ await page.waitForFunction(()=>{try{return Boolean(window.ToonValleyLife?.getState()?.player&&document.getElementById('tasks-button'))}catch{return false}},null,{timeout:20000});
  await page.click('#play-button');await wait(120);
  const state=await page.evaluate(()=>{
   const TV=window.ToonValley,T=window.ToonValleyTransit,C=window.ToonValleyCommunityLife,N=window.ToonValleyNavigationPolish,L=window.ToonValleyBluebellLake,A=window.ToonValleyTownActivities,U=window.ToonValleyUILayerFix;
