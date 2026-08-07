@@ -13,7 +13,7 @@ assert.match(source, /Fish from shore/);
 assert.match(source, /\[\[88,-68\],\[103,-60\],\[128,-62\],\[141,-82\]\]/);
 assert.match(source, /makeCourierStop/);
 assert.match(source, /courierReturning/);
-assert.match(source, /Return courier manifest and get paid/);
+assert.match(source, /Check courier desk/);
 assert.match(source, /return to the Post Office for payment/);
 assert.match(source, /pickup-deliver-return-signoff/);
 assert.match(source, /fishingDay/);
