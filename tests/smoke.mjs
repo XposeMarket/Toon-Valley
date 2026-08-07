@@ -26,9 +26,9 @@ try {
   if (initial.player.money < 1) throw new Error('Player economy did not initialize');
   await page.click('#play-button'); await page.waitForFunction(() => window.ToonValley.state.started);
   checkpoint('entered game');
-  await page.evaluate(() => { window.ToonValleyLife.openPhone('home'); return true; });
+  await page.click('#phone-button');
   await page.waitForSelector('.life-overlay .life-window', { state: 'visible' });
-  await page.evaluate(() => { document.querySelector('.life-close')?.click(); return true; });
+  await page.click('.life-close');
   await waitModalClosed();
   checkpoint('phone modal');
 
