@@ -42,6 +42,7 @@ jobs:
           node --check living-interiors.js
           node --check navigation-polish.js
           node --check side-quest-overhaul.js
+          node --check side-quest-routine-bridge.js
           node --check side-quest-ui.js
           node --check interaction-experience.js
           node --check side-quest-interaction-fix.js
