@@ -16,6 +16,6 @@ assert.match(source, /w\.weather === 'foggy'/);
 assert.match(source, /Life\.emitProgress\('help', 2/);
 assert.match(source, /ToonValleyRoutines/);
 assert.match(html, /valley-routines\.js/);
-assert.match(sw, /toon-valley-v10/);
+assert.match(sw, /const CACHE_NAME = 'toon-valley-v\d+'/);
 assert.match(sw, /valley-routines\.js/);
 console.log('valley routines static checks passed');
