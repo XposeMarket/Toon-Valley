@@ -4,9 +4,18 @@ const external=process.env.BASE_URL;let server=null;const wait=ms=>new Promise(r
 if(!external){server=spawn('python3',['-m','http.server','4179','--bind','127.0.0.1'],{stdio:['ignore','pipe','pipe']});await wait(900)}
 const base=(external||'http://127.0.0.1:4179').replace(/\/$/,'');
 const browser=await chromium.launch({headless:true,args:['--use-gl=swiftshader','--enable-webgl']});const page=await browser.newPage({viewport:{width:1280,height:760}}),errors=[];page.on('pageerror',e=>errors.push(e.stack||e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text())});
-// WebAudio output is irrelevant to this UI test and can stall SwiftShader/headless
-// runners. Product audio remains untouched; only CI gets a no-audio browser.
-await page.addInitScript(()=>{try{Object.defineProperty(window,'AudioContext',{value:undefined,writable:true,configurable:true});Object.defineProperty(window,'webkitAudioContext',{value:undefined,writable:true,configurable:true});}catch{}});
+// Headless Chromium's native Pointer Lock + SwiftShader can deadlock when the
+// lock is released. Replace only the CI browser backend with the same observable
+// events/state so the real game shortcut/handoff code is still exercised.
+await page.addInitScript(()=>{
+ try{
+  Object.defineProperty(window,'AudioContext',{value:undefined,writable:true,configurable:true});
+  Object.defineProperty(window,'webkitAudioContext',{value:undefined,writable:true,configurable:true});
+  Object.defineProperty(Document.prototype,'pointerLockElement',{configurable:true,get(){return this.__tvTestPointerLock||null;}});
+  Element.prototype.requestPointerLock=function(){document.__tvTestPointerLock=this;document.dispatchEvent(new Event('pointerlockchange'));return Promise.resolve();};
+  Document.prototype.exitPointerLock=function(){this.__tvTestPointerLock=null;this.dispatchEvent(new Event('pointerlockchange'));};
+ }catch{}
+});
 try{
  await page.goto(base,{waitUntil:'domcontentloaded',timeout:60000});
  await page.waitForFunction(()=>window.ToonValleyNavigationPolish&&window.ToonValleyTransit&&window.ToonValleyCommunityLife&&window.ToonValleyBluebellLake&&window.ToonValleyTownActivities&&window.ToonValleyUILayerFix,null,{timeout:45000});
@@ -17,7 +26,7 @@ try{
   T.waitAt(stop);const busSeat={seated:TV.state.seated,rotation:TV.player.rotation.y,expected:stop.angle,label:TV.state.seat?.userData?.label};TV.standUpFromSeat(false);
   TV.enterInterior('school',{x:0,z:0});const names=new Set(['Ms. Maple','Cleo','Milo','Nora','Jasper']);const people=[...TV.interiorGroups.school.children].filter(o=>names.has(o.userData?.name)).map(o=>({name:o.userData.name,rotation:o.rotation.y}));const seat=TV.interactables.find(i=>i.area==='school'&&i.prompt==='Sit at student chair');seat?.action?.();const schoolSeat={seated:TV.state.seated,rotation:TV.player.rotation.y};TV.standUpFromSeat(false);TV.exitInterior();
   L.board();L.fish();const boatFishing={fx:L.fishingFX,casting:L.casting};L.leave();
-  return{busSeat,dwell:T.stopDwellSeconds,classroom:N.classroom,wayfinding:N.wayfinding,people,schoolSeat,trail:C.counts,trailMaxRadius:C.trailMaxRadius,worldRadius:TV.CONFIG.worldRadius,trailStart:C.trailPath[0],shoreFishing:A.fishingFX,spots:A.fishingSpots,boatFishing,dock:!!document.getElementById('tv-desktop-dock'),shortcuts:U.desktopShortcuts};
+  return{busSeat,dwell:T.stopDwellSeconds,classroom:N.classroom,wayfinding:N.wayfinding,people,schoolSeat,trail:C.counts,trailMaxRadius:C.trailMaxRadius,worldRadius:TV.CONFIG.worldRadius,trailStart:C.trailPath[0],shoreFishing:A.fishingFX,spots:A.fishingSpots,boatFishing,dock:!!document.getElementById('tv-desktop-dock'),shortcuts:U.desktopShortcuts,pointerBefore:!!document.pointerLockElement};
  });
  if(!state.busSeat.seated||state.busSeat.label!=='shuttle bench'||Math.abs(state.busSeat.rotation-state.busSeat.expected)>.01)throw new Error(`Bus stop facing wrong ${JSON.stringify(state.busSeat)}`);
  if(state.dwell<4.5)throw new Error(`Shuttle dwell too short ${state.dwell}`);
@@ -27,7 +36,7 @@ try{
  if(state.wayfinding.beacons<2||state.wayfinding.signs<2)throw new Error(`Wayfinding missing ${JSON.stringify(state.wayfinding)}`);
  if(state.shoreFishing!=='curved-line-and-bobber'||state.spots.some(p=>Math.hypot(p.x-112,p.z+82)>42))throw new Error(`Shore fishing placement/FX wrong ${JSON.stringify(state.spots)}`);
  if(state.boatFishing.fx!=='rod-curved-line-bobber'||!state.boatFishing.casting)throw new Error(`Boat fishing cast missing ${JSON.stringify(state.boatFishing)}`);
- if(!state.dock||state.shortcuts.phone!=='P'||state.shortcuts.tasks!=='T'||state.shortcuts.inventory!=='I')throw new Error(`Desktop life controls missing ${JSON.stringify(state)}`);
+ if(!state.dock||state.shortcuts.phone!=='P'||state.shortcuts.tasks!=='T'||state.shortcuts.inventory!=='I'||!state.pointerBefore)throw new Error(`Desktop life controls/pointer lock missing ${JSON.stringify(state)}`);
  await page.keyboard.press('t');
  await page.waitForSelector('.life-overlay',{state:'visible',timeout:8000});
  const modal=await page.evaluate(()=>({modal:window.ToonValley.state.modalOpen,pointer:!!document.pointerLockElement,pauseHidden:document.getElementById('pause-screen')?.classList.contains('hidden'),title:document.querySelector('.life-window h2')?.textContent||'',tasks:document.querySelector('.life-tab.active')?.textContent||''}));
