@@ -43,6 +43,7 @@ jobs:
           node --check navigation-polish.js
           node --check side-quest-overhaul.js
           node --check interaction-experience.js
+          node --check side-quest-interaction-fix.js
           node --check swing-exit-fix.js
           node --check npc-building-life.js
           node --check mobile-polish.js
