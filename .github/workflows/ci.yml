@@ -34,6 +34,7 @@ jobs:
           node --check community-garden.js
           node --check valley-community-life.js
           node --check living-interiors.js
+          node --check interaction-experience.js
           node --check mobile-polish.js
           node --check sw.js
           node --check tests/smoke.mjs
