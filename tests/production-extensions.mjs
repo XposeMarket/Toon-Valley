@@ -1,6 +1,7 @@
 import { chromium } from 'playwright';
 
 const url = process.env.BASE_URL || 'https://toon-valley.vercel.app';
+const expectedCommit = process.env.EXPECTED_COMMIT || null;
 const browser = await chromium.launch({ headless: true, args: ['--use-gl=swiftshader', '--enable-webgl'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 760 } });
 const errors = [];
@@ -12,6 +13,7 @@ try {
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForFunction(() => window.ToonValleyCentralPlaza && window.ToonValleyRoutines && window.ToonValleyTownActivities && window.ToonValleyWorldEvents && window.ToonValleyServices && window.ToonValleyPublicInteriors && window.ToonValleyTheater && window.ToonValleyOwnedHome && window.ToonValleyBluebellLake && window.ToonValleyInteractionFix && window.ToonValleyTransit && window.ToonValleyCommunityGarden, null, { timeout: 60000 });
   const state = await page.evaluate(() => ({
+    deployedCommit: document.querySelector('meta[name="toon-valley-commit"]')?.content || null,
     plazaTables: window.ToonValleyCentralPlaza.picnicTables,
     publicInteriors: window.ToonValleyPublicInteriors.counts,
     theater: window.ToonValleyTheater.counts,
@@ -23,6 +25,7 @@ try {
     bootVisible: Boolean(document.getElementById('boot-status')),
     interactables: window.ToonValley.interactables.length
   }));
+  if (expectedCommit && state.deployedCommit !== expectedCommit) throw new Error(`Production commit mismatch: expected ${expectedCommit}, got ${state.deployedCommit || 'none'}`);
   if (state.plazaTables !== 4) throw new Error(`Central plaza missing: ${JSON.stringify(state)}`);
   if (state.publicInteriors.newInteriors !== 4 || state.publicInteriors.upgradedExisting !== 5) throw new Error(`Production public interiors missing: ${JSON.stringify(state)}`);
   if (state.theater.films !== 3 || state.theater.seats !== 28) throw new Error(`Production theater incomplete: ${JSON.stringify(state)}`);

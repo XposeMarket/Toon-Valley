@@ -62,4 +62,5 @@ jobs:
       - name: Production world extension verification
         env:
           BASE_URL: https://toon-valley.vercel.app
+          EXPECTED_COMMIT: ${{ github.sha }}
         run: node tests/production-extensions.mjs

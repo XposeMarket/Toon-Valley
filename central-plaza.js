@@ -1,7 +1,7 @@
 (() => {
   'use strict';
   const directScript = document.currentScript?.src?.includes('/central-plaza.js');
-  const repoBase = 'https://raw.githubusercontent.com/XposeMarket/Toon-Valley/main/';
+  const repoBase = window.__TOON_VALLEY_SOURCE_BASE__ || 'https://raw.githubusercontent.com/XposeMarket/Toon-Valley/main/';
   const localBase = directScript ? new URL('.', document.currentScript.src).href : repoBase;
   const files = directScript
     ? ['central-plaza-core.js']
