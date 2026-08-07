@@ -12,8 +12,10 @@ const checks=[
   ['daily errand rotation',community,/state\.errandIndex=d%errands\.length/],
   ['three errand routes',community,/Valley Explorer/],
   ['persistent community state',community,/toon-valley-community-life-v1/],
-  ['shuttle requires dwell',transit,/d < 8 && dwell > 0/],
-  ['board also guards dwell',transit,/riding \|\| dwell <= 0/],
+  ['physical shuttle waiting',transit,/Waiting at .*automatically when it arrives/],
+  ['bench seating state',transit,/shuttle bench/],
+  ['automatic boarding',transit,/if\(distTo\(waiting\)<7&&dwell>0\)board\(waiting\)/],
+  ['board guards dwell',transit,/riding\|\|dwell<=0/],
   ['production bootstrap',bootstrap,/valley-community-life\.js/],
   ['local bootstrap',index,/valley-community-life\.js/],
   ['offline cache',sw,/valley-community-life\.js/]
