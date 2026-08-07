@@ -13,6 +13,7 @@ const errors = [];
 page.on('pageerror', (error) => errors.push(`pageerror: ${error.stack || error.message}`));
 page.on('console', (message) => { if (message.type() === 'error') errors.push(`console: ${message.text()}`); });
 let stage='boot';const checkpoint=(name)=>{stage=name;console.log(`[smoke] ${name}`)};const watchdog=setTimeout(()=>{console.error(`[smoke] HARD TIMEOUT at ${stage}`);process.exit(124)},90000);
+const waitModalClosed=()=>page.waitForFunction(()=>{const el=document.querySelector('.life-overlay');return !el||getComputedStyle(el).display==='none'||el.classList.contains('hidden')});
 
 try {
   checkpoint('navigate');
@@ -25,8 +26,10 @@ try {
   if (initial.player.money < 1) throw new Error('Player economy did not initialize');
   await page.click('#play-button'); await page.waitForFunction(() => window.ToonValley.state.started);
   checkpoint('entered game');
-  await page.evaluate(() => window.ToonValleyLife.openPhone('home')); await page.waitForSelector('.life-overlay .life-window', { state: 'visible' });
-  await page.evaluate(() => document.querySelector('.life-close')?.click()); await page.waitForSelector('.life-overlay', { state: 'detached' });
+  await page.evaluate(() => { window.ToonValleyLife.openPhone('home'); return true; });
+  await page.waitForSelector('.life-overlay .life-window', { state: 'visible' });
+  await page.evaluate(() => { document.querySelector('.life-close')?.click(); return true; });
+  await waitModalClosed();
   checkpoint('phone modal');
 
   const coreRegression = await page.evaluate(() => {
@@ -43,14 +46,14 @@ try {
   if(coreRegression.overlaps.length)throw new Error(`Buildings overlap roads: ${JSON.stringify(coreRegression.overlaps)}`);
   checkpoint('core interactions');
 
-  await page.evaluate(()=>window.ToonValleyLife.openOutdoorMarket());await page.waitForSelector('[data-market-buy]',{state:'visible'});const marketCount=await page.locator('[data-market-buy]').count();if(marketCount<4)throw new Error(`Outdoor market only exposed ${marketCount} purchasable items`);await page.evaluate(()=>document.querySelector('.life-close')?.click());await page.waitForSelector('.life-overlay',{state:'detached'});
+  await page.evaluate(()=>{window.ToonValleyLife.openOutdoorMarket();return true;});await page.waitForSelector('[data-market-buy]',{state:'visible'});const marketCount=await page.locator('[data-market-buy]').count();if(marketCount<4)throw new Error(`Outdoor market only exposed ${marketCount} purchasable items`);await page.evaluate(()=>{document.querySelector('.life-close')?.click();return true;});await waitModalClosed();
   checkpoint('market');
   const supportsInteriorRecovery=await page.evaluate(()=>typeof window.ToonValley.ensurePlayerSafePosition==='function');
   if(!remoteURL||supportsInteriorRecovery){const storeState=await page.evaluate(()=>{const TV=window.ToonValley;TV.enterInterior('generalStore',{x:26,z:-18});const entered={x:TV.player.position.x,z:TV.player.position.z},enteredBlocked=TV.isBlocked(entered.x,entered.z),movementSpace={forward:!TV.isBlocked(entered.x,entered.z-.5),backward:!TV.isBlocked(entered.x,entered.z+.5),left:!TV.isBlocked(entered.x-.5,entered.z),right:!TV.isBlocked(entered.x+.5,entered.z)};TV.player.position.set(TV.areaBounds.generalStore.cx,0,TV.areaBounds.generalStore.cz+5);const rescued=TV.ensurePlayerSafePosition(),rescuedPosition={x:TV.player.position.x,z:TV.player.position.z},rescuedBlocked=TV.isBlocked(rescuedPosition.x,rescuedPosition.z);TV.exitInterior();return{entered,enteredBlocked,movementSpace,rescued,rescuedPosition,rescuedBlocked,exited:TV.state.area==='world'}});if(storeState.enteredBlocked)throw new Error(`General Store entry spawn is blocked: ${JSON.stringify(storeState.entered)}`);if(!Object.values(storeState.movementSpace).some(Boolean))throw new Error(`General Store has no traversable movement direction: ${JSON.stringify(storeState)}`);if(!storeState.rescued||storeState.rescuedBlocked)throw new Error(`General Store recovery failed: ${JSON.stringify(storeState)}`);if(!storeState.exited)throw new Error(`General Store exit failed: ${JSON.stringify(storeState)}`)}
   checkpoint('interior recovery');
   await page.evaluate(()=>window.ToonValley.enterInterior('home',{x:-64,z:57}));await page.evaluate(()=>window.ToonValleyLife.startBuild('chairBlue'));await page.waitForSelector('#build-controls',{state:'visible'});await page.evaluate(()=>document.querySelector('[data-build="place"]')?.click());await page.waitForFunction(()=>window.ToonValleyLife.getState().property.furniture.length>=1);
   checkpoint('furniture placed');
-  await page.evaluate(()=>window.ToonValleyLife.openShop('grocery'));await page.waitForSelector('[data-buy-item="apple"]',{state:'visible'});await page.evaluate(()=>document.querySelector('[data-buy-item="apple"]')?.click());await page.evaluate(()=>document.querySelector('.life-close')?.click());
+  await page.evaluate(()=>{window.ToonValleyLife.openShop('grocery');return true;});await page.waitForSelector('[data-buy-item="apple"]',{state:'visible'});await page.evaluate(()=>{document.querySelector('[data-buy-item="apple"]')?.click();document.querySelector('.life-close')?.click();return true;});await waitModalClosed();
   checkpoint('saving');
   await page.evaluate(async()=>{window.ToonValleyLife.addMoney(77);await window.ToonValleyLife.saveGame('test')});const moneyBeforeReload=await page.evaluate(()=>window.ToonValleyLife.getState().player.money);
   checkpoint('saved');
