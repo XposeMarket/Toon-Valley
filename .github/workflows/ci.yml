@@ -18,6 +18,8 @@ jobs:
         run: |
           node --check game.js
           node --check life.js
+          node --check public-interiors.js
+          node --check moonbeam-theater.js
           node --check world-events.js
           node --check town-activities.js
           node --check valley-services.js
@@ -27,11 +29,13 @@ jobs:
           node --check tests/smoke.mjs
           node --check tests/extensions-runtime.mjs
           node --check tests/production-extensions.mjs
+          node --check tests/interiors-theater-runtime.mjs
           node tests/world-events-static.mjs
           node tests/town-activities-static.mjs
           node tests/valley-services-static.mjs
           node tests/valley-routines-static.mjs
           node tests/central-plaza-static.mjs
+          node tests/interiors-theater-static.mjs
       - name: Install browser test runtime
         run: |
           npm install --no-save playwright@1.55.0
@@ -40,6 +44,8 @@ jobs:
         run: node tests/smoke.mjs
       - name: World extension runtime test
         run: node tests/extensions-runtime.mjs
+      - name: Interior and theater runtime test
+        run: node tests/interiors-theater-runtime.mjs
       - name: Production browser health check
         env:
           BASE_URL: https://toon-valley.vercel.app
