@@ -26,7 +26,7 @@ try {
   if (initial.player.money < 1) throw new Error('Player economy did not initialize');
   await page.click('#play-button'); await page.waitForFunction(() => window.ToonValley.state.started);
   checkpoint('entered game');
-  await page.keyboard.press('KeyP');
+  await page.keyboard.press('p');
   await page.waitForSelector('.life-overlay .life-window', { state: 'visible' });
   await page.click('.life-close');
   await waitModalClosed();
