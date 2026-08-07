@@ -1,6 +1,6 @@
 'use strict';
-const CACHE_NAME = 'toon-valley-v9';
-const CORE = ['./','./index.html','./style.css','./life.css','./game.js','./life.js','./world-events.js','./town-activities.js','./valley-services.js','./manifest.webmanifest','./icon.svg','https://cdnjs.cloudflare.com/ajax/libs/three.js/0.152.2/three.min.js'];
+const CACHE_NAME = 'toon-valley-v10';
+const CORE = ['./','./index.html','./style.css','./life.css','./game.js','./life.js','./world-events.js','./town-activities.js','./valley-services.js','./valley-routines.js','./manifest.webmanifest','./icon.svg','https://cdnjs.cloudflare.com/ajax/libs/three.js/0.152.2/three.min.js'];
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(CORE)).then(() => self.skipWaiting()));
 });
