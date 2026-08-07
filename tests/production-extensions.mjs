@@ -12,6 +12,7 @@ try {
   if (!swResponse.ok()) throw new Error(`Production service worker returned ${swResponse.status()}`);
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForFunction(() => window.ToonValleyCentralPlaza && window.ToonValleyRoutines && window.ToonValleyTownActivities && window.ToonValleyWorldEvents && window.ToonValleyServices && window.ToonValleyPublicInteriors && window.ToonValleyTheater && window.ToonValleyOwnedHome && window.ToonValleyBluebellLake && window.ToonValleyInteractionFix && window.ToonValleyTransit && window.ToonValleyCommunityGarden, null, { timeout: 60000 });
+  await page.waitForFunction(() => !document.getElementById('boot-status'), null, { timeout: 15000 });
   const state = await page.evaluate(() => ({
     deployedCommit: document.querySelector('meta[name="toon-valley-commit"]')?.content || null,
     plazaTables: window.ToonValleyCentralPlaza.picnicTables,
