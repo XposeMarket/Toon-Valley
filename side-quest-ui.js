@@ -17,6 +17,7 @@
     list.push({icon:'🥕',title:'Farmers-Market Survey',done:q.market.completed,status:q.market.completed?'DONE':q.market.started?`${q.market.samples.length}/${Q.counts.marketSamples}`:'START',text:q.market.completed?'The vendor received your completed tasting feedback.':q.market.started&&q.market.samples.length===Q.counts.marketSamples?'Return to the vendor and report your feedback.':q.market.started?'Taste each marked produce sample before reporting back.':'Talk to the farmers-market vendor to begin a real three-sample survey.'});
     const neighborhood=window.ToonValleyNeighborhoodQuests?.getSummaries?.();if(Array.isArray(neighborhood))list.push(...neighborhood);
     const civic=window.ToonValleyCivicQuests?.getSummaries?.();if(Array.isArray(civic))list.push(...civic);
+    const services=window.ToonValleyTownServiceQuests?.getSummaries?.();if(Array.isArray(services))list.push(...services);
     return list;
   }
   function render(){
