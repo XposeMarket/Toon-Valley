@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const source = fs.readFileSync(new URL('../valley-services.js', import.meta.url), 'utf8');
+const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+const sw = fs.readFileSync(new URL('../sw.js', import.meta.url), 'utf8');
+assert.match(source, /makeGardenBed/);
+assert.match(source, /Garden caretaker bonus/);
+assert.match(source, /makeLostPet/);
+assert.match(source, /Neighborhood pet helper bonus/);
+assert.match(source, /Array\.isArray\(parsed\.watered\)/);
+assert.match(source, /Array\.isArray\(parsed\.petsFound\)/);
+assert.match(source, /resetDaily/);
+assert.match(source, /ToonValleyServices/);
+assert.match(html, /valley-services\.js/);
+assert.match(sw, /toon-valley-v9/);
+assert.match(sw, /valley-services\.js/);
+console.log('valley services static checks passed');
