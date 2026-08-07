@@ -20,22 +20,23 @@ try{
     const enabled=i=>Boolean(i&&(!i.enabled||i.enabled()));
     const money0=Life.getState().player.money;
 
-    // Lost pet: pet must follow across town and only completes at the owner's door.
+    // Lost pet: the petting animation resolves first, then the escort activates.
     const pet=byPrompt('Help Mochi get home');
     pet.action();
+    await sleep(1120);
     const petStart=Q.getState();
     TV.player.position.set(65,TV.terrainHeight(65,60),60);
-    await sleep(350);
+    await sleep(500);
     const petObject=pet.object;
     const followDistance=Math.hypot(petObject.position.x-TV.player.position.x,petObject.position.z-TV.player.position.z);
     const knock=byPrompt("Knock for Mochi's owner");
-    if(!enabled(knock))throw new Error('Lost pet owner door did not activate');
+    if(!enabled(knock))throw new Error(`Lost pet owner door did not activate: ${JSON.stringify(petStart.pets)}`);
     knock.action();await sleep(80);
     const petDone=Q.getState();
     const owner=[...TV.scene.children].find(o=>o.userData?.name==='Mrs. Juniper');
 
     // Forage: four bushes fill a carried basket; cafe handoff is the completion.
-    const berries=TV.interactables.filter(i=>i.prompt==='Gather wild berries').slice(0,4);berries.forEach(i=>i.action());
+    const berries=TV.interactables.filter(i=>i.prompt==='Gather wild berries').slice(0,4);for(const i of berries){i.action();await sleep(620)}
     const forageReady=Q.getState().forage;
     TV.enterInterior('cafe',{x:-15,z:28.1});
     const berryDrop=byPrompt('Hand berry basket to Ari');
@@ -43,8 +44,8 @@ try{
     berryDrop.action();TV.exitInterior();
     const forageDone=Q.getState().forage;
 
-    // Cleanup: collect every piece, physically return the bag to the park bin.
-    const litter=TV.interactables.filter(i=>i.prompt==='Pick up litter');litter.forEach(i=>i.action());
+    // Cleanup: collect every piece, then physically return the bag to the park bin.
+    const litter=TV.interactables.filter(i=>i.prompt==='Pick up litter');for(const i of litter){i.action();await sleep(620)}
     const cleanupReady=Q.getState().cleanup;
     const bin=byPrompt('Drop cleanup bag in park bin');if(!enabled(bin))throw new Error('Cleanup return bin did not activate');bin.action();
     const cleanupDone=Q.getState().cleanup;
@@ -52,14 +53,14 @@ try{
     // Bird survey: notebook checkout -> four observations -> library return.
     TV.enterInterior('library',{x:-26,z:-19.6});
     const checkout=byPrompt('Check out bird survey notebook');if(!enabled(checkout))throw new Error('Bird notebook checkout missing');checkout.action();TV.exitInterior();
-    const birds=TV.interactables.filter(i=>/^Observe /.test(i.prompt||''));birds.forEach(i=>{if(enabled(i))i.action()});
+    const birds=TV.interactables.filter(i=>/^Observe /.test(i.prompt||''));for(const i of birds){if(enabled(i)){i.action();await sleep(620)}}
     const birdReady=Q.getState().birds;
     TV.enterInterior('library',{x:-26,z:-19.6});const birdReturn=byPrompt('Return completed bird survey to Mabel');if(!enabled(birdReturn))throw new Error('Bird survey return missing');birdReturn.action();TV.exitInterior();
     const birdDone=Q.getState().birds;
 
     // Garden: borrow can -> water six individual beds -> return equipment.
     Q.startGarden();
-    const gardenBeds=TV.interactables.filter(i=>/^Water raised garden bed /.test(i.prompt||''));gardenBeds.forEach(i=>{if(enabled(i))i.action()});
+    const gardenBeds=TV.interactables.filter(i=>/^Water raised garden bed /.test(i.prompt||''));for(const i of gardenBeds){if(enabled(i))i.action()}
     const gardenReady=Q.getState().garden;
     const canReturn=byPrompt('Return watering can');if(!enabled(canReturn))throw new Error('Watering-can return missing');canReturn.action();
     const gardenDone=Q.getState().garden;
@@ -67,15 +68,15 @@ try{
     // Notice board: accept -> collect actual cargo from a source -> deliver to target.
     Q.acceptNotice();
     const noticeCollect=TV.interactables.find(i=>/^(Collect returned books|Collect seed packet|Collect fire-station supplies)/.test(i.prompt||'')&&enabled(i));
-    if(!noticeCollect)throw new Error('Notice-board pickup leg missing');noticeCollect.action();
+    if(!noticeCollect)throw new Error('Notice-board pickup leg missing');noticeCollect.action();await sleep(620);
     const noticeLoaded=Q.getState().notice;
     const noticeDeliver=TV.interactables.find(i=>/^(Hand book bundle|Deliver seed packet|Hand supplies)/.test(i.prompt||'')&&enabled(i));
-    if(!noticeDeliver)throw new Error('Notice-board delivery leg missing');noticeDeliver.action();
+    if(!noticeDeliver)throw new Error('Notice-board delivery leg missing');noticeDeliver.action();await sleep(620);
     const noticeDone=Q.getState().notice;
 
     // Farmers market: start survey -> taste three marked samples -> report back.
     Q.marketAction();
-    const samples=TV.interactables.filter(i=>/^Taste market sample /.test(i.prompt||''));samples.forEach(i=>{if(enabled(i))i.action()});
+    const samples=TV.interactables.filter(i=>/^Taste market sample /.test(i.prompt||''));for(const i of samples){if(enabled(i))i.action()}
     const marketReady=Q.getState().market;Q.marketAction();const marketDone=Q.getState().market;
 
     const oldErrand=byPrompt('Complete community errand'),oldWater=TV.interactables.filter(i=>i.prompt==='Water community garden');
