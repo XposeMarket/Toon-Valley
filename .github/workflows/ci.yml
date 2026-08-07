@@ -52,6 +52,7 @@ jobs:
           node --check tests/extensions-runtime.mjs
           node --check tests/npc-swing-runtime.mjs
           node --check tests/navigation-polish-runtime.mjs
+          node --check tests/navigation-polish-static.mjs
           node --check tests/production-extensions.mjs
           node --check tests/valley-expansion-static.mjs
           node --check tests/daily-build-static.mjs
@@ -64,6 +65,7 @@ jobs:
           node tests/valley-expansion-static.mjs
           node tests/daily-build-static.mjs
           node tests/community-life-static.mjs
+          node tests/navigation-polish-static.mjs
       - name: Install browser test runtime
         run: |
           npm install --no-save playwright@1.55.0
