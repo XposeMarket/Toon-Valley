@@ -7,7 +7,7 @@ assert.match(source, /makeGardenBed/);
 assert.match(source, /All five beds are watered/);
 assert.match(source, /makeLostPet/);
 assert.match(source, /activePet/);
-assert.match(source, /Walk together to/);
+assert.match(source, /Walk together(?: across town)? to/);
 assert.match(source, /Knock on .*door/);
 assert.match(source, /Bring .* to the door with you/);
 assert.match(source, /Neighborhood pet helper bonus/);
