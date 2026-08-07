@@ -32,8 +32,10 @@ jobs:
           node --check valley-transit.js
           node --check community-garden.js
           node --check valley-community-life.js
+          node --check mobile-polish.js
           node --check sw.js
           node --check tests/smoke.mjs
+          node --check tests/mobile-smoke.mjs
           node --check tests/extensions-runtime.mjs
           node --check tests/production-extensions.mjs
           node --check tests/valley-expansion-static.mjs
@@ -53,12 +55,18 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Local browser smoke test
         run: node tests/smoke.mjs
+      - name: Mobile browser smoke test
+        run: node tests/mobile-smoke.mjs
       - name: World extension runtime test
         run: node tests/extensions-runtime.mjs
       - name: Production browser health check
         env:
           BASE_URL: https://toon-valley.vercel.app
         run: node tests/smoke.mjs
+      - name: Production mobile browser check
+        env:
+          BASE_URL: https://toon-valley.vercel.app
+        run: node tests/mobile-smoke.mjs
       - name: Production world extension verification
         env:
           BASE_URL: https://toon-valley.vercel.app
