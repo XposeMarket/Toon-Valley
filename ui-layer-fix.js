@@ -31,23 +31,44 @@
   if(TV.state.started)document.body.classList.add('tv-started');
 
   const shortcuts={KeyP:'home',KeyI:'inventory',KeyT:'tasks'};
-  let pendingTab=null;
+  let pendingTab=null,releaseTimer=0;
   function actuallyOpen(tab){
     const Life=window.ToonValleyLife;
     if(!Life?.openPhone)return;
     pendingTab=null;
+    clearTimeout(releaseTimer);
+    // modalOpen is used only as a guard while Pointer Lock is being released.
+    // Clear that temporary guard before asking life.js to build its real modal.
+    if(TV.state.modalOpen&&!document.querySelector('.life-overlay,.mb-overlay,.ohx'))TV.setModalOpen(false);
+    document.getElementById('pause-screen')?.classList.add('hidden');
     requestAnimationFrame(()=>Life.openPhone(tab));
   }
+  function finishRelease(){
+    if(!pendingTab||document.pointerLockElement)return;
+    actuallyOpen(pendingTab);
+  }
   function openTab(tab){
-    if(!TV.state.started||TV.state.modalOpen)return;
+    if(!TV.state.started)return;
+    const existing=document.querySelector('.life-overlay');
+    if(TV.state.modalOpen&&existing){
+      window.ToonValleyLife?.openPhone?.(tab);
+      return;
+    }
+    // Recover from a stale guard left by an interrupted pointer-lock transition.
+    if(TV.state.modalOpen&&!document.querySelector('.life-overlay,.mb-overlay,.ohx'))TV.setModalOpen(false);
+    if(TV.state.modalOpen)return;
     if(document.pointerLockElement){
       pendingTab=tab;
       TV.setModalOpen(true);
+      document.getElementById('pause-screen')?.classList.add('hidden');
       document.exitPointerLock?.();
-      setTimeout(()=>{if(pendingTab&&!document.pointerLockElement)actuallyOpen(pendingTab)},100);
+      clearTimeout(releaseTimer);
+      releaseTimer=setTimeout(finishRelease,180);
     }else actuallyOpen(tab);
   }
-  document.addEventListener('pointerlockchange',()=>{if(!document.pointerLockElement&&pendingTab)actuallyOpen(pendingTab)});
+  document.addEventListener('pointerlockchange',()=>{
+    if(!document.pointerLockElement&&pendingTab)finishRelease();
+  });
   dock.addEventListener('click',event=>{
     const button=event.target.closest('[data-tv-tab]');
     if(!button)return;
@@ -57,7 +78,8 @@
   document.addEventListener('keydown',(event)=>{
     if(event.repeat||event.altKey||event.ctrlKey||event.metaKey)return;
     const tab=shortcuts[event.code];
-    if(!tab||!TV.state.started||TV.state.modalOpen)return;
+    if(!tab||!TV.state.started)return;
+    if(TV.state.modalOpen&&document.querySelector('.life-overlay'))return;
     event.preventDefault();event.stopImmediatePropagation();
     openTab(tab);
   },true);
