@@ -22,8 +22,10 @@ jobs:
           node --check town-activities.js
           node --check valley-services.js
           node --check valley-routines.js
+          node --check central-plaza.js
           node --check sw.js
           node --check tests/smoke.mjs
+          node --check tests/extensions-runtime.mjs
           node tests/world-events-static.mjs
           node tests/town-activities-static.mjs
           node tests/valley-services-static.mjs
@@ -34,8 +36,9 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Local browser smoke test
         run: node tests/smoke.mjs
+      - name: World extension runtime test
+        run: node tests/extensions-runtime.mjs
       - name: Production browser health check
-        # This executes the same General Store entry/recovery/exit regression on the public deployment.
         env:
           BASE_URL: https://toon-valley.vercel.app
         run: node tests/smoke.mjs
