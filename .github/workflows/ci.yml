@@ -43,6 +43,7 @@ jobs:
           node --check navigation-polish.js
           node --check side-quest-overhaul.js
           node --check side-quest-routine-bridge.js
+          node --check neighborhood-quests.js
           node --check side-quest-ui.js
           node --check interaction-experience.js
           node --check side-quest-interaction-fix.js
@@ -57,6 +58,7 @@ jobs:
           node --check tests/npc-swing-runtime.mjs
           node --check tests/navigation-polish-runtime.mjs
           node --check tests/side-quests-runtime.mjs
+          node --check tests/neighborhood-quests-runtime.mjs
           node --check tests/navigation-polish-static.mjs
           node --check tests/production-extensions.mjs
           node --check tests/valley-expansion-static.mjs
@@ -85,6 +87,8 @@ jobs:
         run: timeout 150s node tests/navigation-polish-runtime.mjs
       - name: Multi-step side quest runtime test
         run: timeout 180s node tests/side-quests-runtime.mjs
+      - name: Neighborhood multi-step quest runtime test
+        run: timeout 150s node tests/neighborhood-quests-runtime.mjs
       - name: Local browser smoke test
         run: timeout 150s node tests/smoke.mjs
       - name: Production mobile browser check
@@ -103,6 +107,10 @@ jobs:
         env:
           BASE_URL: https://toon-valley.vercel.app
         run: timeout 180s node tests/side-quests-runtime.mjs
+      - name: Production neighborhood quest verification
+        env:
+          BASE_URL: https://toon-valley.vercel.app
+        run: timeout 150s node tests/neighborhood-quests-runtime.mjs
       - name: Production world extension verification
         env:
           BASE_URL: https://toon-valley.vercel.app
