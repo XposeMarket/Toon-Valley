@@ -1,79 +1,15 @@
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 import process from 'node:process';
-
-const remoteURL = process.env.BASE_URL?.replace(/\/$/, '');
-const server = remoteURL ? null : spawn('python3', ['-m', 'http.server', '4174', '--bind', '127.0.0.1'], { stdio: ['ignore', 'pipe', 'pipe'] });
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-if (server) await wait(900);
-
-const browser = await chromium.launch({ headless: true, args: ['--use-gl=swiftshader', '--enable-webgl'] });
-const context = await browser.newContext({
-  viewport: { width: 430, height: 932 },
-  screen: { width: 430, height: 932 },
-  deviceScaleFactor: 3,
-  isMobile: true,
-  hasTouch: true,
-  userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1'
-});
-const page = await context.newPage();
-const errors = [];
-page.on('pageerror', (error) => errors.push(error.stack || error.message));
-page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
-
-function overlaps(a, b) {
-  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
-}
-
-try {
-  await page.goto(remoteURL || 'http://127.0.0.1:4174', { waitUntil: 'networkidle', timeout: 60000 });
-  await page.waitForFunction(() => window.ToonValley && window.ToonValleyLife && window.ToonValleyMobilePolish, null, { timeout: 30000 });
-  await page.click('#play-button');
-  await page.waitForFunction(() => window.ToonValley.state.started);
-
-  const state = await page.evaluate(() => {
-    const TV = window.ToonValley;
-    const rect = (selector) => {
-      const el = document.querySelector(selector);
-      if (!el) return null;
-      const r = el.getBoundingClientRect();
-      return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height, display: getComputedStyle(el).display };
-    };
-    return {
-      quality: TV.state.quality,
-      rendererPixelRatio: TV.renderer.getPixelRatio(),
-      configuredPixelRatio: TV.CONFIG.mobile.pixelRatio,
-      minPixelRatio: TV.CONFIG.mobile.minPixelRatio,
-      polish: window.ToonValleyMobilePolish,
-      desktopIdentity: rect('#hud .top-left'),
-      location: rect('#hud .location'),
-      fps: rect('#hud .top-right'),
-      lifeTop: rect('#life-hud .life-top'),
-      actions: rect('#life-hud .life-actions'),
-      joystick: rect('#joystick-zone'),
-      use: rect('#mobile-interact'),
-      jump: rect('#mobile-jump'),
-      run: rect('#mobile-sprint'),
-      viewport: { width: innerWidth, height: innerHeight }
-    };
-  });
-
-  if (!state.polish.active) throw new Error(`Mobile polish did not activate: ${JSON.stringify(state)}`);
-  if (state.configuredPixelRatio < 1.3 || state.minPixelRatio < 1) throw new Error(`Mobile render preset still too low resolution: ${JSON.stringify(state)}`);
-  if (state.rendererPixelRatio < 1) throw new Error(`Renderer dropped below sharp mobile floor: ${JSON.stringify(state)}`);
-  if (state.desktopIdentity?.display !== 'none') throw new Error(`Desktop identity HUD is still visible on phone: ${JSON.stringify(state.desktopIdentity)}`);
-  if (state.location?.display !== 'none') throw new Error(`Desktop location card is still visible on phone: ${JSON.stringify(state.location)}`);
-  if (!state.lifeTop || !state.actions || !state.fps) throw new Error(`Mobile HUD pieces missing: ${JSON.stringify(state)}`);
-  if (overlaps(state.lifeTop, state.actions) || overlaps(state.lifeTop, state.fps) || overlaps(state.actions, state.fps)) throw new Error(`Mobile top HUD overlaps: ${JSON.stringify(state)}`);
-
-  for (const [name, box] of Object.entries({ joystick: state.joystick, use: state.use, jump: state.jump, run: state.run })) {
-    if (!box) throw new Error(`${name} control missing`);
-    if (box.left < 0 || box.top < 0 || box.right > state.viewport.width + 1 || box.bottom > state.viewport.height + 1) throw new Error(`${name} control leaves viewport: ${JSON.stringify(box)}`);
-  }
-  if (overlaps(state.joystick, state.jump) || overlaps(state.joystick, state.run)) throw new Error(`Mobile movement controls overlap: ${JSON.stringify(state)}`);
-  if (errors.length) throw new Error(errors.join('\n'));
-  console.log(`Toon Valley mobile smoke passed: ${remoteURL || 'localhost'}`, state);
-} finally {
-  await browser.close();
-  server?.kill('SIGTERM');
-}
+const remoteURL=process.env.BASE_URL?.replace(/\/$/,'');const server=remoteURL?null:spawn('python3',['-m','http.server','4174','--bind','127.0.0.1'],{stdio:['ignore','pipe','pipe']});const wait=(ms)=>new Promise(r=>setTimeout(r,ms));if(server)await wait(900);
+const browser=await chromium.launch({headless:true,args:['--use-gl=swiftshader','--enable-webgl']});const context=await browser.newContext({viewport:{width:430,height:932},screen:{width:430,height:932},deviceScaleFactor:3,isMobile:true,hasTouch:true,userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1'});const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.stack||e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text())});
+const overlaps=(a,b)=>a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top;
+async function layout(){return page.evaluate(()=>{const TV=window.ToonValley,rect=s=>{const e=document.querySelector(s);if(!e)return null;const r=e.getBoundingClientRect();return{left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height,display:getComputedStyle(e).display}};return{ratio:TV.renderer.getPixelRatio(),cfg:TV.CONFIG.mobile.pixelRatio,min:TV.CONFIG.mobile.minPixelRatio,quality:TV.state.quality,life:rect('#life-hud .life-top'),actions:rect('#life-hud .life-actions'),fps:rect('#hud .top-right'),joy:rect('#joystick-zone'),use:rect('#mobile-interact'),jump:rect('#mobile-jump'),run:rect('#mobile-sprint'),desktop:rect('#hud .top-left'),location:rect('#hud .location'),viewport:{width:innerWidth,height:innerHeight}}});}
+function assertLayout(s,label){if(s.cfg<1.6||s.min<1.1||s.ratio<1.1)throw new Error(`${label} mobile render too soft ${JSON.stringify(s)}`);if(s.desktop?.display!=='none'||s.location?.display!=='none')throw new Error(`${label} desktop HUD visible ${JSON.stringify(s)}`);for(const[n,b]of Object.entries({joy:s.joy,use:s.use,jump:s.jump,run:s.run})){if(!b||b.left<0||b.top<0||b.right>s.viewport.width+1||b.bottom>s.viewport.height+1)throw new Error(`${label} ${n} outside viewport ${JSON.stringify(b)}`)}if(overlaps(s.joy,s.jump)||overlaps(s.joy,s.run))throw new Error(`${label} movement controls overlap ${JSON.stringify(s)}`);}
+try{
+ await page.goto(remoteURL||'http://127.0.0.1:4174',{waitUntil:'networkidle',timeout:60000});await page.waitForFunction(()=>window.ToonValley&&window.ToonValleyLife&&window.ToonValleyMobilePolish,null,{timeout:30000});await page.click('#play-button');await page.waitForFunction(()=>window.ToonValley.state.started);
+ let s=await layout();assertLayout(s,'portrait');if(overlaps(s.life,s.actions)||overlaps(s.life,s.fps)||overlaps(s.actions,s.fps))throw new Error(`Portrait top HUD overlap ${JSON.stringify(s)}`);
+ await page.click('#mobile-sprint');await page.waitForFunction(()=>window.ToonValley.state.mobileSprint===true);const sprint=await page.evaluate(()=>{const TV=window.ToonValley;TV.state.mobileMoveY=1;TV.playerVelocity.set(0,0,0);TV.updatePlayer(.2);const speed=Math.hypot(TV.playerVelocity.x,TV.playerVelocity.z);TV.state.mobileMoveY=0;return{active:TV.state.mobileSprint,speed,label:document.querySelector('#mobile-sprint small')?.textContent}});if(!sprint.active||sprint.speed<5.2||sprint.label!=='RUNNING')throw new Error(`Run button failed ${JSON.stringify(sprint)}`);await page.click('#mobile-sprint');await page.waitForFunction(()=>window.ToonValley.state.mobileSprint===false);
+ await page.setViewportSize({width:932,height:430});await page.evaluate(()=>window.dispatchEvent(new Event('orientationchange')));await wait(250);s=await layout();assertLayout(s,'landscape');
+ if(errors.length)throw new Error(errors.join('\n'));console.log(`Toon Valley mobile smoke passed: ${remoteURL||'localhost'}`,s);
+}finally{await browser.close();server?.kill('SIGTERM')}
