@@ -16,6 +16,9 @@ await page.addInitScript(()=>{
 try{
  await page.goto(base,{waitUntil:'domcontentloaded',timeout:60000});
  await page.waitForFunction(()=>window.ToonValleyNavigationPolish&&window.ToonValleyTransit&&window.ToonValleyCommunityLife&&window.ToonValleyBluebellLake&&window.ToonValleyTownActivities&&window.ToonValleyUILayerFix,null,{timeout:45000});
+ // ToonValleyLife is exported before its async save load/injectUI boot finishes.
+ // Wait for the real Tasks HUD control so the save/UI layer is definitely ready.
+ await page.waitForSelector('#tasks-button',{state:'attached',timeout:15000});
  await page.click('#play-button');await wait(120);
  const state=await page.evaluate(()=>{
   const TV=window.ToonValley,T=window.ToonValleyTransit,C=window.ToonValleyCommunityLife,N=window.ToonValleyNavigationPolish,L=window.ToonValleyBluebellLake,A=window.ToonValleyTownActivities,U=window.ToonValleyUILayerFix;
@@ -34,10 +37,7 @@ try{
  if(state.shoreFishing!=='curved-line-and-bobber'||state.spots.some(p=>Math.hypot(p.x-112,p.z+82)>42))throw new Error(`Shore fishing placement/FX wrong ${JSON.stringify(state.spots)}`);
  if(state.boatFishing.fx!=='rod-curved-line-bobber'||!state.boatFishing.casting)throw new Error(`Boat fishing cast missing ${JSON.stringify(state.boatFishing)}`);
  if(!state.dock||state.shortcuts.phone!=='P'||state.shortcuts.tasks!=='T'||state.shortcuts.inventory!=='I'||!state.pointerBefore)throw new Error(`Desktop life controls/pointer lock missing ${JSON.stringify(state)}`);
- // Chromium headless can deadlock when DevTools injects keyboard input while a
- // WebGL canvas owns Pointer Lock. Validate the same menu state without synthetic
- // keyboard delivery: remove the test lock, then open the exact Tasks tab.
- await page.evaluate(()=>{document.__tvTestPointerLock=null;document.dispatchEvent(new Event('pointerlockchange'));window.ToonValley.setModalOpen(false);setTimeout(()=>window.ToonValleyLife.openPhone('tasks'),0);});
+ await page.evaluate(()=>{document.__tvTestPointerLock=null;document.dispatchEvent(new Event('pointerlockchange'));window.ToonValley.setModalOpen(false);window.ToonValleyLife.openPhone('tasks');});
  await page.waitForSelector('.life-overlay',{state:'visible',timeout:8000});
  const modal=await page.evaluate(()=>({modal:window.ToonValley.state.modalOpen,pointer:!!document.pointerLockElement,pauseHidden:document.getElementById('pause-screen')?.classList.contains('hidden'),title:document.querySelector('.life-window h2')?.textContent||'',tasks:document.querySelector('.life-tab.active')?.textContent||''}));
  if(!modal.modal||modal.pointer||!modal.pauseHidden||!modal.title.includes('ToonPhone')||!modal.tasks.includes('Tasks'))throw new Error(`Desktop tasks modal did not unlock mouse ${JSON.stringify(modal)}`);
