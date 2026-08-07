@@ -27,11 +27,13 @@ jobs:
           node --check public-interiors.js
           node --check moonbeam-theater.js
           node --check owned-home.js
+          node --check world-polish.js
           node --check bluebell-lake.js
           node --check interaction-world-fix.js
           node --check valley-transit.js
           node --check community-garden.js
           node --check valley-community-life.js
+          node --check living-interiors.js
           node --check mobile-polish.js
           node --check sw.js
           node --check tests/smoke.mjs
