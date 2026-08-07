@@ -11,19 +11,29 @@ try {
   if (!swResponse.ok()) throw new Error(`Production service worker returned ${swResponse.status()}`);
 
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-  await page.waitForFunction(() => window.ToonValleyCentralPlaza && window.ToonValleyRoutines && window.ToonValleyTownActivities && window.ToonValleyWorldEvents && window.ToonValleyServices, null, { timeout: 45000 });
+  await page.waitForFunction(() => window.ToonValleyCentralPlaza && window.ToonValleyRoutines && window.ToonValleyTownActivities && window.ToonValleyWorldEvents && window.ToonValleyServices && window.ToonValleyPublicInteriors && window.ToonValleyTheater && window.ToonValleyOwnedHome && window.ToonValleyBluebellLake, null, { timeout: 60000 });
   const state = await page.evaluate(() => ({
     plazaTables: window.ToonValleyCentralPlaza.picnicTables,
     routines: window.ToonValleyRoutines.counts,
     activities: window.ToonValleyTownActivities.counts,
     events: window.ToonValleyWorldEvents.counts,
     services: window.ToonValleyServices.counts,
+    publicInteriors: window.ToonValleyPublicInteriors.counts,
+    theater: window.ToonValleyTheater.counts,
+    ownedHome: window.ToonValleyOwnedHome.counts,
+    lake: window.ToonValleyBluebellLake.counts,
+    legacyPondMoved: window.ToonValleyBluebellLake.legacyPondMoved,
+    areas: ['clinic','fireStation','postOffice','school','theater'].every((area) => Boolean(window.ToonValley.areaBounds[area] && window.ToonValley.interiorGroups[area])),
     bootVisible: Boolean(document.getElementById('boot-status')),
     interactables: window.ToonValley.interactables.length
   }));
   if (state.plazaTables !== 4) throw new Error(`Central plaza missing: ${JSON.stringify(state)}`);
+  if (state.publicInteriors.newInteriors !== 4 || state.publicInteriors.upgradedExisting !== 5 || !state.areas) throw new Error(`Production public interiors missing: ${JSON.stringify(state)}`);
+  if (state.theater.films !== 3 || state.theater.seats !== 28) throw new Error(`Production theater incomplete: ${JSON.stringify(state)}`);
+  if (state.ownedHome.decorItems !== 10 || state.ownedHome.homeUpgraded !== 1) throw new Error(`Production owned-home systems incomplete: ${JSON.stringify(state)}`);
+  if (state.lake.lakes !== 1 || state.lake.boats !== 1 || !state.legacyPondMoved) throw new Error(`Production Bluebell Lake incomplete: ${JSON.stringify(state)}`);
   if (state.bootVisible) throw new Error('Production boot overlay never cleared');
-  if (state.interactables < 20) throw new Error(`Production extension interaction count too low: ${state.interactables}`);
+  if (state.interactables < 35) throw new Error(`Production extension interaction count too low: ${state.interactables}`);
   if (errors.length) throw new Error(errors.join('\n'));
   console.log('Production world extensions verified', state);
 } finally {
