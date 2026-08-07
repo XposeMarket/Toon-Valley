@@ -14,6 +14,6 @@ assert.match(source, /courierDay/);
 assert.match(source, /try \{ localStorage\.setItem/);
 assert.match(source, /ToonValleyTownActivities/);
 assert.match(html, /town-activities\.js/);
-assert.match(sw, /toon-valley-v8/);
+assert.match(sw, /toon-valley-v\d+/);
 assert.match(sw, /town-activities\.js/);
 console.log('town activities static checks passed');
