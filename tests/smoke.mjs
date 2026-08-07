@@ -12,7 +12,7 @@ page.setDefaultTimeout(15000); page.setDefaultNavigationTimeout(45000);
 const errors = [];
 page.on('pageerror', (error) => errors.push(`pageerror: ${error.stack || error.message}`));
 page.on('console', (message) => { if (message.type() === 'error') errors.push(`console: ${message.text()}`); });
-const checkpoint=(name)=>console.log(`[smoke] ${name}`);
+let stage='boot';const checkpoint=(name)=>{stage=name;console.log(`[smoke] ${name}`)};const watchdog=setTimeout(()=>{console.error(`[smoke] HARD TIMEOUT at ${stage}`);process.exit(124)},90000);
 
 try {
   checkpoint('navigate');
@@ -51,9 +51,10 @@ try {
   await page.evaluate(()=>window.ToonValley.enterInterior('home',{x:-64,z:57}));await page.evaluate(()=>window.ToonValleyLife.startBuild('chairBlue'));await page.waitForSelector('#build-controls',{state:'visible'});await page.evaluate(()=>document.querySelector('[data-build="place"]')?.click());await page.waitForFunction(()=>window.ToonValleyLife.getState().property.furniture.length>=1);
   checkpoint('furniture placed');
   await page.evaluate(()=>window.ToonValleyLife.openShop('grocery'));await page.waitForSelector('[data-buy-item="apple"]',{state:'visible'});await page.evaluate(()=>document.querySelector('[data-buy-item="apple"]')?.click());await page.evaluate(()=>document.querySelector('.life-close')?.click());
+  checkpoint('saving');
   await page.evaluate(async()=>{window.ToonValleyLife.addMoney(77);await window.ToonValleyLife.saveGame('test')});const moneyBeforeReload=await page.evaluate(()=>window.ToonValleyLife.getState().player.money);
   checkpoint('saved');
   await page.reload({waitUntil:'domcontentloaded'});await page.waitForFunction(expected=>window.ToonValleyLife&&window.ToonValleyLife.getState().player.money===expected,moneyBeforeReload,{timeout:30000});
   checkpoint('reload persisted');
   const finalState=await page.evaluate(()=>window.ToonValleyLife.getState());if(!finalState.property.furniture.length)throw new Error('Furniture placement did not persist');if((finalState.player.inventory.apple||0)<3)throw new Error('Shop purchase did not persist');if(errors.length)throw new Error(errors.join('\n'));console.log(`Toon Valley browser smoke test passed: ${remoteURL||'localhost'}`);
-} finally { await browser.close(); server?.kill('SIGTERM'); }
+} finally { clearTimeout(watchdog); await browser.close(); server?.kill('SIGTERM'); }
