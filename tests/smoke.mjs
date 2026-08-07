@@ -11,15 +11,12 @@ const browser = await chromium.launch({ headless: true, args: ['--use-gl=swiftsh
 const page = await browser.newPage({ viewport: { width: 1280, height: 760 } });
 const errors = [];
 page.on('pageerror', (error) => errors.push(`pageerror: ${error.stack || error.message}`));
-page.on('console', (message) => {
-  if (message.type() === 'error') errors.push(`console: ${message.text()}`);
-});
+page.on('console', (message) => { if (message.type() === 'error') errors.push(`console: ${message.text()}`); });
 
 try {
-  await page.goto(remoteURL || 'http://127.0.0.1:4173', { waitUntil: 'networkidle', timeout: 60000 });
+  await page.goto(remoteURL || 'http://127.0.0.1:4173', { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForFunction(() => window.ToonValley && window.ToonValleyLife, null, { timeout: 30000 });
   await page.waitForSelector('#life-hud');
-
   const initial = await page.evaluate(() => window.ToonValleyLife.getState());
   if (initial.version !== 4) throw new Error(`Unexpected save version ${initial.version}`);
   if (initial.player.money < 1) throw new Error('Player economy did not initialize');
@@ -34,49 +31,20 @@ try {
   const coreRegression = await page.evaluate(() => {
     const TV = window.ToonValley;
     TV.state.modalOpen = true;
-
-    TV.player.position.set(0, TV.terrainHeight(0, 10), 10);
-    TV.state.area = 'world';
-    TV.state.grounded = true;
-    TV.state.jumpVelocity = 0;
+    TV.player.position.set(0, TV.terrainHeight(0, 10), 10); TV.state.area = 'world'; TV.state.grounded = true; TV.state.jumpVelocity = 0;
     document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', bubbles: true }));
-    const queuedJump = TV.state.jumpQueued;
-    TV.updatePlayer(0.016);
-    const jumped = !TV.state.grounded && TV.state.jumpVelocity > 0;
-
-    document.getElementById('mobile-sprint').click();
-    const sprintEnabled = TV.state.mobileSprint;
-    TV.state.mobileMoveY = 1;
-    TV.playerVelocity.set(0, 0, 0);
-    TV.updatePlayer(0.2);
-    const sprintSpeed = Math.hypot(TV.playerVelocity.x, TV.playerVelocity.z);
-    TV.setMobileSprint(false);
-    TV.state.mobileMoveY = 0;
-
-    TV.sitOnBench(TV.benchSeats[0]);
-    const seated = TV.state.seated;
-    const stood = TV.standUpFromSeat(false);
-
+    const queuedJump = TV.state.jumpQueued; TV.updatePlayer(0.016); const jumped = !TV.state.grounded && TV.state.jumpVelocity > 0;
+    document.getElementById('mobile-sprint').click(); const sprintEnabled = TV.state.mobileSprint; TV.state.mobileMoveY = 1; TV.playerVelocity.set(0, 0, 0); TV.updatePlayer(0.2); const sprintSpeed = Math.hypot(TV.playerVelocity.x, TV.playerVelocity.z); TV.setMobileSprint(false); TV.state.mobileMoveY = 0;
+    TV.sitOnBench(TV.benchSeats[0]); const seated = TV.state.seated; const stood = TV.standUpFromSeat(false);
     const overlaps = [];
     for (const building of TV.townBuildings) {
-      const bx1 = building.x - building.halfW;
-      const bx2 = building.x + building.halfW;
-      const bz1 = building.z - building.halfD;
-      const bz2 = building.z + building.halfD;
+      const bx1 = building.x - building.halfW, bx2 = building.x + building.halfW, bz1 = building.z - building.halfD, bz2 = building.z + building.halfD;
       for (const road of TV.roadSegments) {
-        const horizontal = Math.abs(road.z1 - road.z2) < 0.001;
-        const vertical = Math.abs(road.x1 - road.x2) < 0.001;
-        if (!horizontal && !vertical) continue;
-        const rx1 = Math.min(road.x1, road.x2) - (vertical ? road.width * 0.5 : 0);
-        const rx2 = Math.max(road.x1, road.x2) + (vertical ? road.width * 0.5 : 0);
-        const rz1 = Math.min(road.z1, road.z2) - (horizontal ? road.width * 0.5 : 0);
-        const rz2 = Math.max(road.z1, road.z2) + (horizontal ? road.width * 0.5 : 0);
-        if (bx1 < rx2 && bx2 > rx1 && bz1 < rz2 && bz2 > rz1) {
-          overlaps.push({ building: building.label, road });
-        }
+        const horizontal = Math.abs(road.z1-road.z2)<.001, vertical = Math.abs(road.x1-road.x2)<.001; if(!horizontal&&!vertical) continue;
+        const rx1=Math.min(road.x1,road.x2)-(vertical?road.width*.5:0),rx2=Math.max(road.x1,road.x2)+(vertical?road.width*.5:0),rz1=Math.min(road.z1,road.z2)-(horizontal?road.width*.5:0),rz2=Math.max(road.z1,road.z2)+(horizontal?road.width*.5:0);
+        if(bx1<rx2&&bx2>rx1&&bz1<rz2&&bz2>rz1) overlaps.push({building:building.label,road});
       }
     }
-
     TV.state.modalOpen = false;
     return { queuedJump, jumped, sprintEnabled, sprintSpeed, seated, stood, overlaps };
   });
@@ -95,32 +63,10 @@ try {
   const supportsInteriorRecovery = await page.evaluate(() => typeof window.ToonValley.ensurePlayerSafePosition === 'function');
   if (!remoteURL || supportsInteriorRecovery) {
     const storeState = await page.evaluate(() => {
-      const TV = window.ToonValley;
-      TV.enterInterior('generalStore', { x: 26, z: -18 });
-      const entered = { x: TV.player.position.x, z: TV.player.position.z };
-      const enteredBlocked = TV.isBlocked(entered.x, entered.z);
-      const movementSpace = {
-        forward: !TV.isBlocked(entered.x, entered.z - 0.5),
-        backward: !TV.isBlocked(entered.x, entered.z + 0.5),
-        left: !TV.isBlocked(entered.x - 0.5, entered.z),
-        right: !TV.isBlocked(entered.x + 0.5, entered.z)
-      };
-
-      // Reproduce the old broken save/spawn location and verify automatic rescue.
-      TV.player.position.set(TV.areaBounds.generalStore.cx, 0, TV.areaBounds.generalStore.cz + 5.0);
-      const rescued = TV.ensurePlayerSafePosition();
-      const rescuedPosition = { x: TV.player.position.x, z: TV.player.position.z };
-      const rescuedBlocked = TV.isBlocked(rescuedPosition.x, rescuedPosition.z);
-      TV.exitInterior();
-      return {
-        entered,
-        enteredBlocked,
-        movementSpace,
-        rescued,
-        rescuedPosition,
-        rescuedBlocked,
-        exited: TV.state.area === 'world'
-      };
+      const TV = window.ToonValley; TV.enterInterior('generalStore', { x: 26, z: -18 });
+      const entered={x:TV.player.position.x,z:TV.player.position.z},enteredBlocked=TV.isBlocked(entered.x,entered.z),movementSpace={forward:!TV.isBlocked(entered.x,entered.z-.5),backward:!TV.isBlocked(entered.x,entered.z+.5),left:!TV.isBlocked(entered.x-.5,entered.z),right:!TV.isBlocked(entered.x+.5,entered.z)};
+      TV.player.position.set(TV.areaBounds.generalStore.cx,0,TV.areaBounds.generalStore.cz+5); const rescued=TV.ensurePlayerSafePosition(),rescuedPosition={x:TV.player.position.x,z:TV.player.position.z},rescuedBlocked=TV.isBlocked(rescuedPosition.x,rescuedPosition.z); TV.exitInterior();
+      return {entered,enteredBlocked,movementSpace,rescued,rescuedPosition,rescuedBlocked,exited:TV.state.area==='world'};
     });
     if (storeState.enteredBlocked) throw new Error(`General Store entry spawn is blocked: ${JSON.stringify(storeState.entered)}`);
     if (!Object.values(storeState.movementSpace).some(Boolean)) throw new Error(`General Store has no traversable movement direction: ${JSON.stringify(storeState)}`);
@@ -133,26 +79,17 @@ try {
   await page.waitForSelector('#build-controls', { state: 'visible' });
   await page.evaluate(() => document.querySelector('[data-build="place"]')?.click());
   await page.waitForFunction(() => window.ToonValleyLife.getState().property.furniture.length >= 1);
-
   await page.evaluate(() => window.ToonValleyLife.openShop('grocery'));
   await page.waitForSelector('[data-buy-item="apple"]', { state: 'visible' });
   await page.evaluate(() => document.querySelector('[data-buy-item="apple"]')?.click());
   await page.evaluate(() => document.querySelector('.life-close')?.click());
-
-  await page.evaluate(async () => {
-    window.ToonValleyLife.addMoney(77);
-    await window.ToonValleyLife.saveGame('test');
-  });
+  await page.evaluate(async () => { window.ToonValleyLife.addMoney(77); await window.ToonValleyLife.saveGame('test'); });
   const moneyBeforeReload = await page.evaluate(() => window.ToonValleyLife.getState().player.money);
-  await page.reload({ waitUntil: 'networkidle' });
+  await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForFunction((expected) => window.ToonValleyLife && window.ToonValleyLife.getState().player.money === expected, moneyBeforeReload, { timeout: 30000 });
-
   const finalState = await page.evaluate(() => window.ToonValleyLife.getState());
   if (!finalState.property.furniture.length) throw new Error('Furniture placement did not persist');
   if ((finalState.player.inventory.apple || 0) < 3) throw new Error('Shop purchase did not persist');
   if (errors.length) throw new Error(errors.join('\n'));
   console.log(`Toon Valley browser smoke test passed: ${remoteURL || 'localhost'}`);
-} finally {
-  await browser.close();
-  server?.kill('SIGTERM');
-}
+} finally { await browser.close(); server?.kill('SIGTERM'); }
