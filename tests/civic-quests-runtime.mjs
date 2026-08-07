@@ -14,26 +14,40 @@ try{
   const report=await page.evaluate(async()=>{
     const TV=window.ToonValley,C=window.ToonValleyCivicQuests,U=window.ToonValleySideQuestUI,Life=window.ToonValleyLife;
     const sleep=ms=>new Promise(r=>setTimeout(r,ms)),find=p=>TV.interactables.find(i=>i.prompt===p),enabled=i=>Boolean(i&&(!i.enabled||i.enabled()));
-    const until=async(fn,label,timeout=6000)=>{const start=performance.now();while(performance.now()-start<timeout){if(fn())return;await sleep(100)}throw new Error(`Timed out waiting for ${label}`)};
+    const until=async(fn,label,timeout=7000)=>{const start=performance.now();while(performance.now()-start<timeout){if(fn())return;await sleep(100)}throw new Error(`Timed out waiting for ${label}`)};
+    const run=async(prompt,condition,label)=>{const action=find(prompt);if(!enabled(action))throw new Error(`Interaction unavailable: ${prompt}`);action.action();await until(condition,label||prompt)};
     const money0=Life.getState().player.money;
 
-    TV.enterInterior('fireStation',{x:-51.8,z:-25});const startHydrant=find('Ask Sam about hydrant inspections');if(!enabled(startHydrant))throw new Error('Hydrant quest start unavailable');startHydrant.action();await until(()=>C.getState().hydrants.started,'hydrant start');TV.exitInterior();
-    for(const [index,name] of ['Maple Avenue hydrant','Sunshine Park hydrant','East Market hydrant'].entries()){const action=find(`Inspect ${name}`);if(!enabled(action))throw new Error(`Hydrant action unavailable: ${name}`);action.action();await until(()=>C.getState().hydrants.checked.length===index+1,`hydrant ${index+1} inspection`)}
+    TV.enterInterior('fireStation',{x:-51.8,z:-25});await run('Ask Sam about hydrant inspections',()=>C.getState().hydrants.started,'hydrant start');TV.exitInterior();
+    for(const [index,name] of ['Maple Avenue hydrant','Sunshine Park hydrant','East Market hydrant'].entries())await run(`Inspect ${name}`,()=>C.getState().hydrants.checked.length===index+1,`hydrant ${index+1}`);
     const hydrantsReady=C.getState().hydrants;
-    TV.enterInterior('fireStation',{x:-51.8,z:-25});const reportHydrant=find('Report hydrant round to Sam');if(!enabled(reportHydrant))throw new Error('Hydrant report unavailable');reportHydrant.action();await until(()=>C.getState().hydrants.done,'hydrant completion');TV.exitInterior();
+    TV.enterInterior('fireStation',{x:-51.8,z:-25});await run('Report hydrant round to Sam',()=>C.getState().hydrants.done,'hydrant completion');TV.exitInterior();
 
-    TV.enterInterior('postOffice',{x:52.6,z:-25});const parcelStart=find('Ask Cal for neighborhood parcel route');if(!enabled(parcelStart))throw new Error('Parcel route start unavailable');parcelStart.action();await until(()=>C.getState().parcels.stage==='load','parcel accept');const load=find('Load neighborhood parcel satchel');if(!enabled(load))throw new Error('Parcel load unavailable');load.action();await until(()=>C.getState().parcels.stage==='deliver','parcel load');TV.exitInterior();
-    for(const [index,name] of ['Mrs. Juniper','Mr. Maple','Jamie'].entries()){const action=find(`Deliver parcel to ${name}`);if(!enabled(action))throw new Error(`Parcel delivery unavailable: ${name}`);action.action();await until(()=>C.getState().parcels.delivered.length===index+1,`parcel ${index+1} delivery`)}
+    TV.enterInterior('postOffice',{x:52.6,z:-25});await run('Ask Cal for neighborhood parcel route',()=>C.getState().parcels.stage==='load','parcel accept');await run('Load neighborhood parcel satchel',()=>C.getState().parcels.stage==='deliver','parcel load');TV.exitInterior();
+    for(const [index,name] of ['Mrs. Juniper','Mr. Maple','Jamie'].entries())await run(`Deliver parcel to ${name}`,()=>C.getState().parcels.delivered.length===index+1,`parcel ${index+1}`);
     const parcelsReady=C.getState().parcels;
-    TV.enterInterior('postOffice',{x:52.6,z:-25});const returnSatchel=find('Return delivery satchel to Cal');if(!enabled(returnSatchel))throw new Error('Satchel return unavailable');returnSatchel.action();await until(()=>C.getState().parcels.done,'parcel completion');TV.exitInterior();
+    TV.enterInterior('postOffice',{x:52.6,z:-25});await run('Return delivery satchel to Cal',()=>C.getState().parcels.done,'parcel completion');TV.exitInterior();
+
+    TV.enterInterior('cityHall',{x:-3.5,z:-27});await run('Ask June about streetlight maintenance',()=>C.getState().lights.stage==='toolkit','streetlight accept');await run('Collect streetlight maintenance toolkit',()=>C.getState().lights.stage==='inspect','streetlight toolkit');TV.exitInterior();
+    for(const [index,name] of ['Central Plaza lamp','Maple Avenue lamp','East Neighborhood lamp'].entries())await run(`Inspect ${name}`,()=>C.getState().lights.checked.length===index+1,`streetlight ${index+1}`);
+    const lightsReady=C.getState().lights;
+    TV.enterInterior('cityHall',{x:-3.5,z:-27});await run('Return streetlight toolkit and report to June',()=>C.getState().lights.done,'streetlight completion');TV.exitInterior();
+
+    TV.enterInterior('generalStore',{x:26,z:-19.6});await run('Ask Nina about the school supply order',()=>C.getState().school.stage==='load','school order accept');await run('Load Rainbow Elementary supply crate',()=>C.getState().school.stage==='deliver','school crate load');TV.exitInterior();
+    TV.enterInterior('school',{x:-33.5,z:43});await run('Hand school supplies to Ms. Maple',()=>C.getState().school.stage==='return','school handoff');TV.exitInterior();
+    const schoolReady=C.getState().school;
+    TV.enterInterior('generalStore',{x:26,z:-19.6});await run('Return signed school receipt to Nina',()=>C.getState().school.done,'school completion');TV.exitInterior();
 
     const summaries=U.getSummaries();
-    return{hydrantsReady,hydrants:C.getState().hydrants,parcelsReady,parcels:C.getState().parcels,moneyGain:Life.getState().player.money-money0,summaryCount:summaries.length,hydrantSummary:summaries.find(x=>x.title==='Hydrant Safety Round'),parcelSummary:summaries.find(x=>x.title==='Neighborhood Parcel Route')};
+    return{counts:C.counts,hydrantsReady,hydrants:C.getState().hydrants,parcelsReady,parcels:C.getState().parcels,lightsReady,lights:C.getState().lights,schoolReady,school:C.getState().school,moneyGain:Life.getState().player.money-money0,summaryCount:summaries.length,hydrantSummary:summaries.find(x=>x.title==='Hydrant Safety Round'),parcelSummary:summaries.find(x=>x.title==='Neighborhood Parcel Route'),lightSummary:summaries.find(x=>x.title==='Streetlight Maintenance Round'),schoolSummary:summaries.find(x=>x.title==='Rainbow Elementary Supply Run')};
   });
+  if(report.counts.quests!==4||report.counts.streetlights!==3)throw new Error(`Civic quest counts wrong ${JSON.stringify(report.counts)}`);
   if(report.hydrantsReady.checked.length!==3||!report.hydrantsReady.ready||!report.hydrants.done)throw new Error(`Hydrant route incomplete ${JSON.stringify(report.hydrants)}`);
   if(report.parcelsReady.delivered.length!==3||report.parcelsReady.stage!=='return'||!report.parcels.done)throw new Error(`Parcel route incomplete ${JSON.stringify(report.parcels)}`);
-  if(report.moneyGain!==265)throw new Error(`Unexpected civic quest rewards ${report.moneyGain}`);
-  if(report.summaryCount<11||!report.hydrantSummary?.done||!report.parcelSummary?.done)throw new Error(`ToonPhone tracker missing civic quests ${JSON.stringify(report)}`);
+  if(report.lightsReady.checked.length!==3||report.lightsReady.stage!=='return'||!report.lights.done)throw new Error(`Streetlight round incomplete ${JSON.stringify(report.lights)}`);
+  if(report.schoolReady.stage!=='return'||!report.school.done)throw new Error(`School supply run incomplete ${JSON.stringify(report.school)}`);
+  if(report.moneyGain!==530)throw new Error(`Unexpected civic quest rewards ${report.moneyGain}`);
+  if(report.summaryCount<13||!report.hydrantSummary?.done||!report.parcelSummary?.done||!report.lightSummary?.done||!report.schoolSummary?.done)throw new Error(`ToonPhone tracker missing civic quests ${JSON.stringify(report)}`);
   if(errors.length)throw new Error(errors.join('\n'));
-  console.log('Civic multi-step quest checks passed',report);
+  console.log('Expanded civic multi-step quest checks passed',report);
 } finally {await browser.close();if(server)server.kill('SIGTERM')}
