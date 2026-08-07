@@ -17,64 +17,15 @@
 </head>
 <body>
   <div id="game"></div>
-
   <div id="hud" class="hidden">
-    <div class="top-left panel">
-      <div class="title-row"><strong>TOON VALLEY</strong><span id="quality-label">LOW</span></div>
-      <div class="meter"><span id="stamina-fill"></span></div>
-      <small>STAMINA</small>
-    </div>
-
-    <div id="location-name" class="location panel compact">TOON VALLEY</div>
-    <div class="top-right panel compact"><span id="fps">-- FPS</span></div>
-    <div id="crosshair">+</div>
-    <div id="interaction-prompt" class="interaction-prompt"></div>
-
-    <div class="controls panel">
-      <b>WASD</b> move · <b>Mouse</b> camera · <b>Shift</b> sprint · <b>C</b> toggle run · <b>Space</b> jump · <b>E</b> interact · <b>Q</b> quality
-    </div>
-    <div id="toast" class="toast"></div>
-
-    <div id="mobile-controls" class="hidden" aria-label="Mobile game controls">
-      <div id="look-pad" aria-label="Swipe to move camera"></div>
-      <div id="joystick-zone" aria-label="Movement joystick">
-        <div class="joystick-ring"><div id="joystick-knob"></div></div>
-      </div>
-      <button id="mobile-sprint" class="mobile-button sprint" aria-label="Run"><span>⚡</span><small>RUN</small></button>
-      <button id="mobile-jump" class="mobile-button jump" aria-label="Jump"><span>↑</span><small>JUMP</small></button>
-      <button id="mobile-interact" class="mobile-button interact" aria-label="Interact"><span>✦</span><small>USE</small></button>
-    </div>
+    <div class="top-left panel"><div class="title-row"><strong>TOON VALLEY</strong><span id="quality-label">LOW</span></div><div class="meter"><span id="stamina-fill"></span></div><small>STAMINA</small></div>
+    <div id="location-name" class="location panel compact">TOON VALLEY</div><div class="top-right panel compact"><span id="fps">-- FPS</span></div><div id="crosshair">+</div><div id="interaction-prompt" class="interaction-prompt"></div>
+    <div class="controls panel"><b>WASD</b> move · <b>Mouse</b> camera · <b>Shift</b> sprint · <b>C</b> toggle run · <b>Space</b> jump · <b>E</b> interact · <b>Q</b> quality</div><div id="toast" class="toast"></div>
+    <div id="mobile-controls" class="hidden" aria-label="Mobile game controls"><div id="look-pad" aria-label="Swipe to move camera"></div><div id="joystick-zone" aria-label="Movement joystick"><div class="joystick-ring"><div id="joystick-knob"></div></div></div><button id="mobile-sprint" class="mobile-button sprint" aria-label="Run"><span>⚡</span><small>RUN</small></button><button id="mobile-jump" class="mobile-button jump" aria-label="Jump"><span>↑</span><small>JUMP</small></button><button id="mobile-interact" class="mobile-button interact" aria-label="Interact"><span>✦</span><small>USE</small></button></div>
   </div>
-
-  <div id="start-screen" class="overlay">
-    <div class="card">
-      <div class="eyebrow">A complete lightweight toon life simulator</div>
-      <h1>TOON<br />VALLEY</h1>
-      <p>Build a life in a growing cel-shaded town. Work silly jobs, earn money, shop, make friends, decorate your saved home, and help Toon Valley expand.</p>
-      <div class="quality-picker" aria-label="Graphics quality">
-        <button class="quality" data-quality="mobile">Mobile / Battery</button>
-        <button class="quality active" data-quality="low">Low — 2019 MacBook Air</button>
-        <button class="quality" data-quality="medium">Medium</button>
-      </div>
-      <button id="play-button" class="play">ENTER TOON VALLEY</button>
-      <small class="desktop-help">Mouse controls the camera. Press Esc to release it.</small>
-      <small class="mobile-help">Left thumb moves. Drag the right side to look. Use the three action buttons.</small>
-      <div id="load-error" class="error hidden">Three.js could not load. Check the game files, then refresh.</div>
-    </div>
-  </div>
-
-  <div id="pause-screen" class="overlay hidden">
-    <div class="card small-card">
-      <div class="eyebrow">Paused</div>
-      <h2>Back to the valley?</h2>
-      <button id="resume-button" class="play">RESUME</button>
-      <small>Click anywhere in the game to recapture the mouse.</small>
-    </div>
-  </div>
-
+  <div id="start-screen" class="overlay"><div class="card"><div class="eyebrow">A complete lightweight toon life simulator</div><h1>TOON<br />VALLEY</h1><p>Build a life in a growing cel-shaded town. Work silly jobs, earn money, shop, make friends, decorate your saved home, and help Toon Valley expand.</p><div class="quality-picker" aria-label="Graphics quality"><button class="quality" data-quality="mobile">Mobile / Battery</button><button class="quality active" data-quality="low">Low — 2019 MacBook Air</button><button class="quality" data-quality="medium">Medium</button></div><button id="play-button" class="play">ENTER TOON VALLEY</button><small class="desktop-help">Mouse controls the camera. Press Esc to release it.</small><small class="mobile-help">Left thumb moves. Drag the right side to look. Use the three action buttons.</small><div id="load-error" class="error hidden">Three.js could not load. Check the game files, then refresh.</div></div></div>
+  <div id="pause-screen" class="overlay hidden"><div class="card small-card"><div class="eyebrow">Paused</div><h2>Back to the valley?</h2><button id="resume-button" class="play">RESUME</button><small>Click anywhere in the game to recapture the mouse.</small></div></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.152.2/three.min.js" referrerpolicy="no-referrer"></script>
-  <script src="game.js"></script>
-  <script src="life.js"></script>
-  <script src="world-events.js"></script>
+  <script src="game.js"></script><script src="life.js"></script><script src="world-events.js"></script><script src="town-activities.js"></script>
 </body>
 </html>
