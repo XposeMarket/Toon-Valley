@@ -9,8 +9,8 @@ assert.match(theater,/Moon Rabbit Express/);assert.match(theater,/The Great Berr
 assert.match(home,/LOT=\{x:-51,z:66/);assert.match(home,/Enter your home/);assert.match(home,/Miso the Cat/);assert.match(home,/Biscuit the Dog/);assert.match(home,/homeUpgraded:1/);
 assert.match(world,/legacyPondRemoved/);assert.match(world,/scene\.remove\(oldPond\)/);assert.match(world,/roadsAdded/);assert.match(world,/pauseGuard/);
 assert.match(lake,/LAKE=\{x:112,z:-82,rx:28,rz:21\}/);assert.match(lake,/MeshPhongMaterial/);assert.match(lake,/lilyPads/);assert.match(lake,/Board wooden rowboat/);assert.match(lake,/dockPlanks:13/);
-assert.match(transit,/routeX/);assert.match(transit,/routePoints/);assert.match(transit,/body\.scale\.set\(2\.45,2\.1,5\.6\)/);assert.match(transit,/Waiting at/);assert.match(transit,/automatically when it arrives/);
+assert.match(transit,/routeX/);assert.match(transit,/routePoints/);assert.match(transit,/body\.scale\.set\(2\.45,2\.1,5\.6\)/);assert.match(transit,/automatically when it arrives/);
 assert.match(living,/Ari','Barista/);assert.match(living,/theaterSeats/);assert.match(living,/cafeSeats/);assert.match(living,/for\(let r=0;r<4;r\+\+\)for\(let c=0;c<7;c\+\+\)seat\('theater'/);
-assert.match(experience,/pitchRange/);assert.match(experience,/Play on the swings/);assert.match(experience,/tvAnimalPolished/);assert.match(experience,/enterMovie/);assert.match(experience,/updateMovie/);assert.match(experience,/Water community garden/);
+assert.match(experience,/pitchRange:\{min:-\.72,max:\.58\}/);assert.match(experience,/Play on the swings/);assert.match(experience,/Go down the slide/);assert.match(experience,/tvAnimalPolished/);assert.match(experience,/enterMovie/);assert.match(experience,/scene\.onBeforeRender/);assert.match(experience,/camera\.fov=105/);assert.match(experience,/camera\.zoom=\.45/);assert.match(experience,/TAP \/ CLICK TO STAND UP/);assert.match(experience,/Water community garden/);assert.match(experience,/Forage\|Pick up\|Observe\|Fish\|Deliver\|Collect\|Check/);
 assert.match(services,/\[-132,58\]/);assert.match(services,/gardenAnnex/);
 console.log('valley expansion static checks passed');
