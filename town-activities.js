@@ -28,41 +28,18 @@
     const band=new THREE.Mesh(TV.unitBox,TV.materials.red||TV.mat(0xd84a62));band.scale.set(.08,.36,.4);band.position.y=.34;group.add(band);
     const marker=TV.outlinedMesh(new THREE.ConeGeometry(.18,.55,6),TV.materials.yellow||TV.mat(0xf1c84b),1.04);marker.rotation.x=Math.PI;marker.position.y=1.35;group.add(marker);
     group.position.set(x,TV.terrainHeight(x,z),z);TV.scene.add(group);courierStops.push({group,index,label});
-    TV.registerInteraction({
-      object:group,radius:2.5,area:'world',
-      prompt:()=>{
-        if(index===0&&state.courierReturning)return 'Return courier manifest and get paid';
-        if(index===0)return 'Pick up courier route';
-        return `Deliver parcel: ${label}`;
-      },
-      enabled:()=>{
-        if(state.courierDone)return false;
-        if(index===0)return state.courierStep===0||state.courierReturning;
-        return !state.courierReturning&&state.courierStep===index;
-      },
-      action:()=>{
-        if(state.courierDone)return;
-        if(index===0&&state.courierReturning){
-          state.courierReturning=false;state.courierDone=true;state.courierStep=courierStops.length;save();
-          Life.addMoney(170,'Completed courier route');Life.emitProgress('help',3,{activity:'courier-complete'});
-          TV.showToast('📬 Postmaster: “Everything delivered and signed for. Nice work!” Route complete +$170',3.6);return;
-        }
-        if(index===0&&state.courierStep===0){state.courierStep=1;save();TV.showToast('📦 Route started · 3 parcels loaded. Deliver all three, then return the manifest here.',3.2);return}
-        if(index>0&&state.courierStep===index){
-          state.courierStep+=1;Life.emitProgress('help',1,{activity:'courier',stop:label});
-          const lastDelivery=index===courierStops.length-1;
-          if(lastDelivery){state.courierReturning=true;state.courierStep=0;TV.showToast(`📦 ${label} signed for the parcel. All deliveries done — return to the Post Office for payment.`,3.3)}
-          else TV.showToast(`📦 ${label} signed for the parcel · ${courierStops.length-1-index} delivery${courierStops.length-1-index===1?'':'ies'} left`,2.6);
-          save();
-        }
-      }
-    });
+    TV.registerInteraction({object:group,radius:2.5,area:'world',prompt:index===0?'Check courier desk':`Deliver parcel: ${label}`,enabled:()=>{if(state.courierDone)return false;if(index===0)return state.courierStep===0||state.courierReturning;return!state.courierReturning&&state.courierStep===index},action:()=>{
+      if(state.courierDone)return;
+      if(index===0&&state.courierReturning){state.courierReturning=false;state.courierDone=true;state.courierStep=courierStops.length;save();Life.addMoney(170,'Completed courier route');Life.emitProgress('help',3,{activity:'courier-complete'});TV.showToast('📬 Postmaster: “Everything delivered and signed for. Nice work!” Route complete +$170',3.6);return}
+      if(index===0&&state.courierStep===0){state.courierStep=1;save();TV.showToast('📦 Route started · 3 parcels loaded. Deliver all three, then return the manifest here.',3.2);return}
+      if(index>0&&state.courierStep===index){state.courierStep+=1;Life.emitProgress('help',1,{activity:'courier',stop:label});const lastDelivery=index===courierStops.length-1;if(lastDelivery){state.courierReturning=true;state.courierStep=0;TV.showToast(`📦 ${label} signed for the parcel. All deliveries done — return to the Post Office for payment.`,3.3)}else TV.showToast(`📦 ${label} signed for the parcel · ${courierStops.length-1-index} delivery${courierStops.length-1-index===1?'':'ies'} left`,2.6);save()}
+    }});
   }
 
   [[88,-68],[103,-60],[128,-62],[141,-82]].forEach((p,i)=>makeFishingSpot(p[0],p[1],i));
   [[4,18,'Post Office'],[32,34,'Maple House'],[-28,-22,'Market Cottage'],[58,-18,'Hilltop Home']].forEach((p,i)=>makeCourierStop(p[0],p[1],i,p[2]));
   resetDaily();fishingSpots.forEach(spot=>{spot.group.visible=!state.caught.includes(spot.index)});
-  let timer=0,clock=0;TV.registerUpdateHook(dt=>{timer+=dt;clock+=dt;for(const spot of fishingSpots){if(spot.bobber.visible)spot.bobber.position.y=.12+Math.sin(clock*5+spot.index)*.035}courierStops.forEach((stop)=>{stop.group.visible=!state.courierDone&&(stop.index===0?(state.courierStep===0||state.courierReturning):(!state.courierReturning&&state.courierStep===stop.index))});if(timer>=2){timer=0;resetDaily()}});
+  let timer=0,clock=0;TV.registerUpdateHook(dt=>{timer+=dt;clock+=dt;for(const spot of fishingSpots){if(spot.bobber.visible)spot.bobber.position.y=.12+Math.sin(clock*5+spot.index)*.035}courierStops.forEach(stop=>{stop.group.visible=!state.courierDone&&(stop.index===0?(state.courierStep===0||state.courierReturning):(!state.courierReturning&&state.courierStep===stop.index))});if(timer>=2){timer=0;resetDaily()}});
   window.ToonValleyTownActivities={getState:()=>JSON.parse(JSON.stringify(state)),counts:{fishing:fishingSpots.length,courier:courierStops.length-1},fishingSpots:fishingSpots.map(s=>({x:s.group.position.x,z:s.group.position.z})),fishingFX:'curved-line-and-bobber',courierFlow:'pickup-deliver-return-signoff'};
   console.info('Toon Valley town activities ready',window.ToonValleyTownActivities.counts);
 })();
