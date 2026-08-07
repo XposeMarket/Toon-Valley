@@ -22,6 +22,7 @@ jobs:
         run: |
           node --check game.js
           node --check life.js
+          node --check pointer-capture-guard.js
           node --check world-events.js
           node --check town-activities.js
           node --check valley-services.js
