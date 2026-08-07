@@ -30,7 +30,9 @@ try {
   if (initial.player.money < 1) throw new Error('Player economy did not initialize');
   await page.click('#play-button'); await page.waitForFunction(() => window.ToonValley.state.started);
   checkpoint('entered game');
-  await page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyP',key:'p',bubbles:true})));
+  const phoneApi = await page.evaluate(() => typeof window.ToonValleyLife.openPhone === 'function');
+  if (!phoneApi) throw new Error('Phone API is unavailable');
+  await page.evaluate(() => { window.ToonValleyLife.openPhone('home'); return true; });
   await page.waitForSelector('.life-overlay .life-window', { state: 'visible' });
   await page.evaluate(() => document.querySelector('.life-close')?.click());
   await waitModalClosed();
