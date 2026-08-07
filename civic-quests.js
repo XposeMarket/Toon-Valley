@@ -1,0 +1,46 @@
+(() => {
+  'use strict';
+  const TV=window.ToonValley,Life=window.ToonValleyLife;
+  if(!TV||!Life)return;
+  const{THREE}=TV,KEY='toon-valley-civic-quests-v1',bounds=TV.areaBounds;
+  const fresh=()=>({day:-1,hydrants:{started:false,checked:[],ready:false,done:false},parcels:{stage:'start',delivered:[],done:false}});
+  let state=(()=>{try{return Object.assign(fresh(),JSON.parse(localStorage.getItem(KEY)||'{}'))}catch{return fresh()}})();
+  const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(state))}catch(error){console.warn('Unable to save civic quests',error)}};
+  const day=()=>Life.getState().world.day;
+
+  const markerRoot=new THREE.Group();TV.scene.add(markerRoot);const markers=[];
+  function marker(color){const g=new THREE.Group(),m=new THREE.MeshBasicMaterial({color,fog:false,transparent:true,opacity:.96}),ring=new THREE.Mesh(new THREE.TorusGeometry(.66,.08,6,18),m),bar=new THREE.Mesh(new THREE.BoxGeometry(.3,1.5,.3),m),dot=new THREE.Mesh(new THREE.SphereGeometry(.23,8,6),m);ring.rotation.x=Math.PI/2;ring.position.y=-.12;bar.position.y=1.25;dot.position.y=.22;g.add(ring,bar,dot);g.visible=false;markerRoot.add(g);const out={group:g,ring,x:0,z:0,active:false};markers.push(out);return out}
+  function place(m,x,z){m.x=x;m.z=z;m.active=true;m.group.position.set(x,TV.terrainHeight(x,z)+6.2,z);m.group.visible=TV.state.area==='world'}
+  function clear(m){m.active=false;m.group.visible=false}
+  const hydrantMarker=marker(0xff5d4f),parcelMarker=marker(0x5ca8ff);
+
+  const carryRoot=new THREE.Group();TV.player.add(carryRoot);
+  const satchel=new THREE.Group(),bag=TV.outlinedMesh(TV.unitBox,TV.mat(0x936b45),1.025),strap=new THREE.Mesh(new THREE.TorusGeometry(.42,.055,6,14,Math.PI),TV.materials.dark||TV.mat(0x31343b));bag.scale.set(.62,.62,.32);strap.rotation.z=Math.PI/2;strap.position.set(0,.42,0);satchel.add(bag,strap);satchel.position.set(.72,1.22,.18);satchel.visible=false;carryRoot.add(satchel);
+
+  const hydrants=[[-43,15,'Maple Avenue hydrant'],[15,55,'Sunshine Park hydrant'],[61,-8,'East Market hydrant']];
+  function nextHydrant(){const idx=hydrants.findIndex((_,i)=>!state.hydrants.checked.includes(i));if(idx>=0)place(hydrantMarker,hydrants[idx][0],hydrants[idx][1]);else{state.hydrants.ready=true;place(hydrantMarker,-51.8,-25)}}
+  TV.registerInteraction({x:bounds.fireStation.cx,z:bounds.fireStation.cz-5.6,radius:2.8,area:'fireStation',prompt:'Ask Sam about hydrant inspections',enabled:()=>!state.hydrants.started&&!state.hydrants.done,action:()=>{state.hydrants.started=true;nextHydrant();TV.showToast('🚒 Sam: “Can you inspect the three neighborhood hydrants and report back? Follow the red marker.”',3.8);save()}});
+  hydrants.forEach((p,index)=>TV.registerInteraction({x:p[0],z:p[1],radius:2.5,area:'world',prompt:`Inspect ${p[2]}`,enabled:()=>state.hydrants.started&&!state.hydrants.done&&!state.hydrants.ready&&!state.hydrants.checked.includes(index)&&state.hydrants.checked.length===index,action:()=>{state.hydrants.checked.push(index);Life.emitProgress('help',1,{activity:'hydrant-inspection',hydrant:index});nextHydrant();TV.showToast(state.hydrants.checked.length===hydrants.length?'🚒 All three hydrants checked. Return to Sam at the fire station.':`🚒 Hydrant checked · ${state.hydrants.checked.length}/${hydrants.length}. Follow the next red marker.`,2.7);save()}}));
+  TV.registerInteraction({x:bounds.fireStation.cx,z:bounds.fireStation.cz-5.6,radius:2.8,area:'fireStation',prompt:'Report hydrant round to Sam',enabled:()=>state.hydrants.ready&&!state.hydrants.done,action:()=>{state.hydrants.done=true;state.hydrants.ready=false;clear(hydrantMarker);Life.addMoney(125,'Fire-station hydrant safety round');Life.emitProgress('help',2,{activity:'hydrant-round-complete'});TV.showToast('🚒 Sam: “Great route check — all three hydrants are clear and accessible.” +$125',3.8);save()}});
+
+  const parcelStops=[[68,62.5,'Mrs. Juniper'],[-68,-47.5,'Mr. Maple'],[-69.5,17,'Jamie']];
+  function nextParcelMarker(){const idx=state.parcels.delivered.length;if(idx<parcelStops.length)place(parcelMarker,parcelStops[idx][0],parcelStops[idx][1]);else place(parcelMarker,52.6,-25)}
+  TV.registerInteraction({x:bounds.postOffice.cx,z:bounds.postOffice.cz+5.45,radius:2.8,area:'postOffice',prompt:'Ask Cal for neighborhood parcel route',enabled:()=>state.parcels.stage==='start'&&!state.parcels.done,action:()=>{state.parcels.stage='load';TV.showToast('📬 Cal: “I have a three-house parcel route if you want it. Load the delivery satchel before you head out.”',3.7);save()}});
+  TV.registerInteraction({x:bounds.postOffice.cx+2.2,z:bounds.postOffice.cz+5.45,radius:2.8,area:'postOffice',prompt:'Load neighborhood parcel satchel',enabled:()=>state.parcels.stage==='load'&&!state.parcels.done,action:()=>{state.parcels.stage='deliver';satchel.visible=true;nextParcelMarker();TV.showToast('📦 Three parcels loaded. Deliver them in order, then bring Cal the empty satchel.',3.4);save()}});
+  parcelStops.forEach((p,index)=>TV.registerInteraction({x:p[0],z:p[1],radius:3,area:'world',prompt:`Deliver parcel to ${p[2]}`,enabled:()=>state.parcels.stage==='deliver'&&!state.parcels.done&&state.parcels.delivered.length===index,action:()=>{state.parcels.delivered.push(index);Life.emitProgress('help',1,{activity:'parcel-delivery',stop:index});nextParcelMarker();if(state.parcels.delivered.length===parcelStops.length){state.parcels.stage='return';TV.showToast('📬 All three parcels delivered. Return the empty satchel to Cal at the Post Office.',3.2)}else TV.showToast(`📦 Parcel delivered · ${state.parcels.delivered.length}/${parcelStops.length}. Follow the next blue marker.`,2.6);save()}}));
+  TV.registerInteraction({x:bounds.postOffice.cx,z:bounds.postOffice.cz+5.45,radius:2.8,area:'postOffice',prompt:'Return delivery satchel to Cal',enabled:()=>state.parcels.stage==='return'&&!state.parcels.done,action:()=>{state.parcels.done=true;state.parcels.stage='done';satchel.visible=false;clear(parcelMarker);Life.addMoney(140,'Neighborhood parcel route');Life.emitProgress('help',2,{activity:'parcel-route-complete'});TV.showToast('📬 Cal: “Three clean deliveries and the satchel back too. Nice route!” +$140',3.8);save()}});
+
+  function reset(force=false){const today=day();if(!force&&state.day===today)return;state=fresh();state.day=today;satchel.visible=false;markers.forEach(clear);save()}
+  reset();
+  if(state.hydrants.started&&!state.hydrants.done)nextHydrant();
+  if((state.parcels.stage==='deliver'||state.parcels.stage==='return')&&!state.parcels.done){satchel.visible=true;nextParcelMarker()}
+
+  let t=0,elapsed=0;TV.registerUpdateHook(dt=>{t+=dt;elapsed+=dt;markers.forEach((m,i)=>{m.group.position.y=TV.terrainHeight(m.x,m.z)+6.2+Math.sin(t*2.25+i)*.24;m.ring.rotation.z+=dt*.7;m.group.visible=m.active&&TV.state.area==='world'});if(elapsed>=2){elapsed=0;if(state.day!==day())reset(true)}});
+
+  function summaries(){return[
+    {icon:'🚒',title:'Hydrant Safety Round',done:state.hydrants.done,status:state.hydrants.done?'DONE':!state.hydrants.started?'START':state.hydrants.ready?'REPORT':`${state.hydrants.checked.length}/${hydrants.length}`,text:state.hydrants.done?'Sam received the completed hydrant report.':!state.hydrants.started?'Talk to Sam inside the Fire Station to begin the safety round.':state.hydrants.ready?'Return to Sam inside the Fire Station and report the completed route.':`Inspect the next marked hydrant · ${state.hydrants.checked.length}/${hydrants.length} checked.`},
+    {icon:'📬',title:'Neighborhood Parcel Route',done:state.parcels.done,status:state.parcels.done?'DONE':state.parcels.stage==='start'?'START':state.parcels.stage==='load'?'LOAD':state.parcels.stage==='return'?'RETURN':`${state.parcels.delivered.length}/${parcelStops.length}`,text:state.parcels.done?'Cal received the empty satchel after all deliveries.':state.parcels.stage==='start'?'Talk to Cal inside the Post Office to accept the parcel route.':state.parcels.stage==='load'?'Load the three-parcel satchel at the Post Office before leaving.':state.parcels.stage==='return'?'Return the empty delivery satchel to Cal for sign-off and payment.':`Deliver the next marked parcel · ${state.parcels.delivered.length}/${parcelStops.length} complete.`}
+  ]}
+  window.ToonValleyCivicQuests=Object.freeze({active:true,counts:{quests:2,hydrants:hydrants.length,parcelStops:parcelStops.length},getState:()=>JSON.parse(JSON.stringify(state)),getSummaries:summaries});
+  console.info('Toon Valley civic quests ready',window.ToonValleyCivicQuests.counts);
+})();
