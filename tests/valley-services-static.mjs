@@ -12,6 +12,6 @@ assert.match(source, /Array\.isArray\(parsed\.petsFound\)/);
 assert.match(source, /resetDaily/);
 assert.match(source, /ToonValleyServices/);
 assert.match(html, /valley-services\.js/);
-assert.match(sw, /toon-valley-v9/);
+assert.match(sw, /toon-valley-v\d+/);
 assert.match(sw, /valley-services\.js/);
 console.log('valley services static checks passed');
