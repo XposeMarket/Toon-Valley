@@ -18,12 +18,12 @@ try{
     const money0=Life.getState().player.money;
 
     TV.enterInterior('fireStation',{x:-51.8,z:-25});const startHydrant=find('Ask Sam about hydrant inspections');if(!enabled(startHydrant))throw new Error('Hydrant quest start unavailable');startHydrant.action();await until(()=>C.getState().hydrants.started,'hydrant start');TV.exitInterior();
-    for(const name of ['Maple Avenue hydrant','Sunshine Park hydrant','East Market hydrant']){const action=find(`Inspect ${name}`);if(!enabled(action))throw new Error(`Hydrant action unavailable: ${name}`);action.action();await sleep(700)}
+    for(const [index,name] of ['Maple Avenue hydrant','Sunshine Park hydrant','East Market hydrant'].entries()){const action=find(`Inspect ${name}`);if(!enabled(action))throw new Error(`Hydrant action unavailable: ${name}`);action.action();await until(()=>C.getState().hydrants.checked.length===index+1,`hydrant ${index+1} inspection`)}
     const hydrantsReady=C.getState().hydrants;
     TV.enterInterior('fireStation',{x:-51.8,z:-25});const reportHydrant=find('Report hydrant round to Sam');if(!enabled(reportHydrant))throw new Error('Hydrant report unavailable');reportHydrant.action();await until(()=>C.getState().hydrants.done,'hydrant completion');TV.exitInterior();
 
     TV.enterInterior('postOffice',{x:52.6,z:-25});const parcelStart=find('Ask Cal for neighborhood parcel route');if(!enabled(parcelStart))throw new Error('Parcel route start unavailable');parcelStart.action();await until(()=>C.getState().parcels.stage==='load','parcel accept');const load=find('Load neighborhood parcel satchel');if(!enabled(load))throw new Error('Parcel load unavailable');load.action();await until(()=>C.getState().parcels.stage==='deliver','parcel load');TV.exitInterior();
-    for(const name of ['Mrs. Juniper','Mr. Maple','Jamie']){const action=find(`Deliver parcel to ${name}`);if(!enabled(action))throw new Error(`Parcel delivery unavailable: ${name}`);action.action();await sleep(700)}
+    for(const [index,name] of ['Mrs. Juniper','Mr. Maple','Jamie'].entries()){const action=find(`Deliver parcel to ${name}`);if(!enabled(action))throw new Error(`Parcel delivery unavailable: ${name}`);action.action();await until(()=>C.getState().parcels.delivered.length===index+1,`parcel ${index+1} delivery`)}
     const parcelsReady=C.getState().parcels;
     TV.enterInterior('postOffice',{x:52.6,z:-25});const returnSatchel=find('Return delivery satchel to Cal');if(!enabled(returnSatchel))throw new Error('Satchel return unavailable');returnSatchel.action();await until(()=>C.getState().parcels.done,'parcel completion');TV.exitInterior();
 
