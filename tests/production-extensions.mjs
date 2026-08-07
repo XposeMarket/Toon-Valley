@@ -7,6 +7,9 @@ const errors = [];
 page.on('pageerror', (error) => errors.push(error.stack || error.message));
 page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
 try {
+  const swResponse = await page.request.get(`${url.replace(/\/$/, '')}/sw.js`);
+  if (!swResponse.ok()) throw new Error(`Production service worker returned ${swResponse.status()}`);
+
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await page.waitForFunction(() => window.ToonValleyCentralPlaza && window.ToonValleyRoutines && window.ToonValleyTownActivities && window.ToonValleyWorldEvents && window.ToonValleyServices, null, { timeout: 45000 });
   const state = await page.evaluate(() => ({
