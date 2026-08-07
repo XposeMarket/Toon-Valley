@@ -18,8 +18,14 @@ jobs:
         run: |
           node --check game.js
           node --check life.js
+          node --check world-events.js
+          node --check town-activities.js
+          node --check valley-services.js
           node --check sw.js
           node --check tests/smoke.mjs
+          node tests/world-events-static.mjs
+          node tests/town-activities-static.mjs
+          node tests/valley-services-static.mjs
       - name: Install browser test runtime
         run: |
           npm install --no-save playwright@1.55.0
