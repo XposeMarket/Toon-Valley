@@ -10,11 +10,11 @@ page.on('pageerror',e=>errors.push(e.stack||e.message));page.on('console',m=>{if
 
 try{
   await page.goto(base,{waitUntil:'domcontentloaded',timeout:60000});
-  await page.waitForFunction(()=>window.ToonValleySideQuests&&window.ToonValleySideQuestUI&&window.ToonValleyServices&&window.ToonValleyLife?.getState()?.player,null,{timeout:45000});
+  await page.waitForFunction(()=>window.ToonValleySideQuests&&window.ToonValleySideQuestUI&&window.ToonValleyServices&&window.ToonValleyRoutines&&window.ToonValleyLife?.getState()?.player,null,{timeout:45000});
   await page.click('#play-button');await wait(160);
 
   const report=await page.evaluate(async()=>{
-    const TV=window.ToonValley,Q=window.ToonValleySideQuests,UI=window.ToonValleySideQuestUI,S=window.ToonValleyServices,Life=window.ToonValleyLife;
+    const TV=window.ToonValley,Q=window.ToonValleySideQuests,UI=window.ToonValleySideQuestUI,S=window.ToonValleyServices,R=window.ToonValleyRoutines,Life=window.ToonValleyLife;
     const sleep=ms=>new Promise(r=>setTimeout(r,ms));
     const until=async(fn,label,timeout=5000)=>{const start=performance.now();while(performance.now()-start<timeout){if(fn())return true;await sleep(100)}throw new Error(`Timed out waiting for ${label}`)};
     const byPrompt=p=>TV.interactables.find(i=>i.prompt===p);
@@ -41,8 +41,10 @@ try{
 
     Q.startGarden();const gardenBeds=TV.interactables.filter(i=>/^Water raised garden bed /.test(i.prompt||''));for(const i of gardenBeds){if(enabled(i))i.action()}await until(()=>Q.getState().garden.watered.length===6,'all garden beds watered');const gardenReady=Q.getState().garden;const canReturn=byPrompt('Return watering can');if(!enabled(canReturn))throw new Error('Watering-can return missing');canReturn.action();await until(()=>Q.getState().garden.returned,'watering can return');const gardenDone=Q.getState().garden;
 
-    Q.acceptNotice();const noticeCollect=TV.interactables.find(i=>/^(Collect returned books|Collect seed packet|Collect fire-station supplies)/.test(i.prompt||'')&&enabled(i));if(!noticeCollect)throw new Error('Notice-board pickup leg missing');noticeCollect.action();await until(()=>Q.getState().notice.stage==='deliver','notice cargo pickup');const noticeLoaded=Q.getState().notice;
-    const noticeDeliver=TV.interactables.find(i=>/^(Hand book bundle|Deliver seed packet|Hand supplies)/.test(i.prompt||'')&&enabled(i));if(!noticeDeliver)throw new Error('Notice-board delivery leg missing');noticeDeliver.action();await until(()=>Q.getState().notice.completed,'notice delivery');const noticeDone=Q.getState().notice;
+    const board=byPrompt('Check community notice board');if(!board)throw new Error('Community notice board missing');board.action();await until(()=>R.getState().stage===1,'notice-board acceptance');
+    const noticeCollect=byPrompt('Pick up errand item');if(!enabled(noticeCollect))throw new Error(`Canonical notice-board pickup leg missing: ${JSON.stringify(R.getState())}`);noticeCollect.action();await until(()=>R.getState().stage===2,'notice cargo pickup');const noticeLoaded=R.getState();
+    const noticeDeliver=byPrompt('Make errand delivery');if(!enabled(noticeDeliver))throw new Error(`Canonical notice-board delivery leg missing: ${JSON.stringify(R.getState())}`);noticeDeliver.action();await until(()=>R.getState().stage===3,'notice cargo delivery');const noticeDelivered=R.getState();
+    board.action();await until(()=>R.getState().completed&&R.getState().stage===4,'notice-board final sign-off');const noticeDone=R.getState();
 
     Q.marketAction();const samples=TV.interactables.filter(i=>/^Taste market sample /.test(i.prompt||''));for(const i of samples){if(enabled(i))i.action()}await until(()=>Q.getState().market.samples.length===3,'three market samples');const marketReady=Q.getState().market;Q.marketAction();await until(()=>Q.getState().market.completed,'market report hand-in');const marketDone=Q.getState().market;
     const trackerDone=UI.getSummaries(),oldErrand=byPrompt('Complete community errand'),oldWater=TV.interactables.filter(i=>i.prompt==='Water community garden bed');
@@ -50,7 +52,7 @@ try{
       pet:{questStyle:S.questStyle,activeAtStart:petStart.activePet,distanceBefore,distanceAfter,moved,done:petDone.petsFound.includes(0),ownerVisible,home},
       forage:{ready:forageReady.ready,collected:forageReady.collected.length,done:forageDone.delivered},cleanup:{ready:cleanupReady.ready,collected:cleanupReady.collected.length,done:cleanupDone.delivered},
       birds:{started:birdReady.started,seen:birdReady.seen.length,ready:birdReady.ready,done:birdDone.returned},garden:{watered:gardenReady.watered.length,readyToReturn:gardenReady.started,done:gardenDone.returned},
-      notice:{loaded:noticeLoaded.stage,done:noticeDone.completed},market:{samples:marketReady.samples.length,done:marketDone.completed},oldOneClickDisabled:!oldErrand?.enabled?.()&&oldWater.every(i=>!i.enabled?.())};
+      notice:{questStyle:R.questStyle,loaded:noticeLoaded.stage,delivered:noticeDelivered.stage,done:noticeDone.completed,stage:noticeDone.stage},market:{samples:marketReady.samples.length,done:marketDone.completed},oldOneClickDisabled:!oldErrand?.enabled?.()&&oldWater.every(i=>!i.enabled?.())};
   });
 
   if(report.counts.overhauled<6||report.audit.alreadySubstantive.length<9||report.trackerBefore.length!==7)throw new Error(`Quest audit/tracker incomplete ${JSON.stringify(report)}`);
@@ -60,11 +62,12 @@ try{
   if(!report.cleanup.ready||report.cleanup.collected<6||!report.cleanup.done)throw new Error(`Cleanup return failed ${JSON.stringify(report.cleanup)}`);
   if(!report.birds.started||report.birds.seen<4||!report.birds.ready||!report.birds.done)throw new Error(`Bird survey failed ${JSON.stringify(report.birds)}`);
   if(report.garden.watered!==6||!report.garden.readyToReturn||!report.garden.done)throw new Error(`Garden round failed ${JSON.stringify(report.garden)}`);
-  if(report.notice.loaded!=='deliver'||!report.notice.done)throw new Error(`Notice errand failed ${JSON.stringify(report.notice)}`);
+  if(report.notice.questStyle!=='accept-pickup-deliver-return-signoff'||report.notice.loaded!==2||report.notice.delivered!==3||!report.notice.done||report.notice.stage!==4)throw new Error(`Notice errand failed ${JSON.stringify(report.notice)}`);
   if(report.market.samples!==3||!report.market.done)throw new Error(`Market survey failed ${JSON.stringify(report.market)}`);
   if(!report.oldOneClickDisabled)throw new Error('Legacy one-click quest endpoints are still active');
   if(report.moneyGain<400)throw new Error(`Quest completion rewards missing ${report.moneyGain}`);
   const completedTitles=new Set(report.trackerDone.filter(q=>q.done).map(q=>q.title));for(const title of ['Cafe Berry Basket','Community Cleanup','Valley Bird Survey','Garden Care Round','Farmers-Market Survey'])if(!completedTitles.has(title))throw new Error(`Tracker did not mark ${title} complete`);
+  if(!report.trackerDone.some(q=>q.done&&/Library Book Return|Garden Seed Delivery|Fire Station Supply Run/.test(q.title)))throw new Error(`Tracker did not mark canonical notice-board errand complete: ${JSON.stringify(report.trackerDone)}`);
   if(errors.length)throw new Error(errors.join('\n'));
   console.log('Multi-step side quest runtime checks passed',report);
 } finally {await browser.close();if(server)server.kill('SIGTERM')}
