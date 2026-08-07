@@ -55,7 +55,8 @@ try{
       notice:{questStyle:R.questStyle,loaded:noticeLoaded.stage,delivered:noticeDelivered.stage,done:noticeDone.completed,stage:noticeDone.stage},market:{samples:marketReady.samples.length,done:marketDone.completed},oldOneClickDisabled:!oldErrand?.enabled?.()&&oldWater.every(i=>!i.enabled?.())};
   });
 
-  if(report.counts.overhauled<6||report.audit.alreadySubstantive.length<9||report.trackerBefore.length!==7)throw new Error(`Quest audit/tracker incomplete ${JSON.stringify(report)}`);
+  const trackerTitles=new Set(report.trackerBefore.map(q=>q.title));
+  if(report.counts.overhauled<6||report.audit.alreadySubstantive.length<9||report.trackerBefore.length<9||!trackerTitles.has('Clinic Recovery Meal')||!trackerTitles.has('Classroom Art Restock'))throw new Error(`Quest audit/tracker incomplete ${JSON.stringify(report)}`);
   if(report.pet.questStyle!=='multi-step-escort-real-house-owner-handoff'||report.pet.activeAtStart!==0||report.pet.moved<.5||report.pet.distanceAfter>=report.pet.distanceBefore||!report.pet.done||!report.pet.ownerVisible)throw new Error(`Lost pet escort failed ${JSON.stringify(report.pet)}`);
   if(!report.trackerAfterPet.find(q=>q.title==='Lost Pet Rescue')?.status.includes('1/'))throw new Error(`Pet tracker did not update ${JSON.stringify(report.trackerAfterPet)}`);
   if(!report.forage.ready||report.forage.collected<4||!report.forage.done)throw new Error(`Forage delivery failed ${JSON.stringify(report.forage)}`);
