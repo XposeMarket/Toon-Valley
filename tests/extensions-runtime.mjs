@@ -1,9 +1,9 @@
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 const server=spawn('python3',['-m','http.server','4174','--bind','127.0.0.1'],{stdio:['ignore','pipe','pipe']});const wait=(ms)=>new Promise(r=>setTimeout(r,ms));await wait(900);
-const browser=await chromium.launch({headless:true,args:['--use-gl=swiftshader','--enable-webgl']});const page=await browser.newPage({viewport:{width:1280,height:760}}),errors=[];page.on('pageerror',e=>errors.push(e.stack||e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text())});
+const browser=await chromium.launch({headless:true,args:['--use-gl=swiftshader','--enable-webgl']});const page=await browser.newPage({viewport:{width:1280,height:760}}),errors=[];page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(e.stack||e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text())});
 try{
- await page.goto('http://127.0.0.1:4174',{waitUntil:'networkidle',timeout:60000});
+ await page.goto('http://127.0.0.1:4174',{waitUntil:'domcontentloaded',timeout:45000});
  await page.waitForFunction(()=>window.ToonValleyCentralPlaza&&window.ToonValleyPublicInteriors&&window.ToonValleyTheater&&window.ToonValleyOwnedHome&&window.ToonValleyWorldPolish&&window.ToonValleyBluebellLake&&window.ToonValleyTransit&&window.ToonValleyLivingInteriors&&window.ToonValleyInteractionExperience&&window.ToonValleyCameraPolish&&window.ToonValleyServices,null,{timeout:30000});
  const state=await page.evaluate(()=>{
   const TV=window.ToonValley,LI=window.ToonValleyLivingInteriors,T=window.ToonValleyTransit,X=window.ToonValleyInteractionExperience,C=window.ToonValleyCameraPolish;
@@ -16,7 +16,8 @@ try{
   const onRoad=p=>TV.roadSegments.some(r=>{const dx=r.x2-r.x1,dz=r.z2-r.z1,len2=dx*dx+dz*dz||1,t=Math.max(0,Math.min(1,((p[0]-r.x1)*dx+(p[1]-r.z1)*dz)/len2)),x=r.x1+dx*t,z=r.z1+dz*t;return Math.hypot(p[0]-x,p[1]-z)<=r.width*.5+.75});
   const pets=TV.interactables.filter(i=>/^Pet |^Help .* get home$|Pet your companion/.test(i.prompt||'')&&i.object?.userData?.tvAnimalPolished&&i.object.children.length>10).length;
   const annex=window.ToonValleyServices.gardenAnnex||[];
-  return{publicInteriors:window.ToonValleyPublicInteriors.counts,theater:window.ToonValleyTheater.counts,lake:window.ToonValleyBluebellLake.counts,world:window.ToonValleyWorldPolish,living:LI.counts,staff:LI.staffByArea,transit:T.counts,routeOnRoad:T.route.every(onRoad),cafeSat,movieEntered,movieExited,movieCamera,cameraPolish:C,swingSat,busWaiting,pauseGuarded,pets,annexSafe:annex.length===5&&annex.every(p=>p.x<=-128&&p.z>=58),interiors,interactables:TV.interactables.length};
+  const annexClear=annex.length===5&&annex.every(p=>!TV.townBuildings.some(b=>Math.abs(p.x-b.x)<b.halfW+2.1&&Math.abs(p.z-b.z)<b.halfD+1.5));
+  return{publicInteriors:window.ToonValleyPublicInteriors.counts,theater:window.ToonValleyTheater.counts,lake:window.ToonValleyBluebellLake.counts,world:window.ToonValleyWorldPolish,living:LI.counts,staff:LI.staffByArea,transit:T.counts,routeOnRoad:T.route.every(onRoad),cafeSat,movieEntered,movieExited,movieCamera,cameraPolish:C,swingSat,busWaiting,pauseGuarded,pets,annexClear,interiors,interactables:TV.interactables.length};
  });
  if(state.publicInteriors.newInteriors!==4||state.publicInteriors.upgradedExisting!==5)throw new Error(`Public interiors missing ${JSON.stringify(state)}`);
  if(state.theater.films!==3||state.theater.seats!==28)throw new Error(`Theater incomplete ${JSON.stringify(state)}`);
@@ -25,7 +26,7 @@ try{
  if(!state.cafeSat||!state.movieEntered||!state.movieExited||!state.swingSat||!state.busWaiting)throw new Error(`Physical interaction regression ${JSON.stringify(state)}`);
  if(!state.cameraPolish?.touchLook||state.movieCamera.fov!==58||Math.abs(state.movieCamera.zoom-1.08)>.001)throw new Error(`Camera experience polish missing ${JSON.stringify(state)}`);
  if(!state.pauseGuarded)throw new Error(`Pause overlay still stacks over interaction modals ${JSON.stringify(state)}`);
- if(!state.world.legacyPondRemoved||state.world.roadsAdded<4||!state.annexSafe)throw new Error(`World placement polish missing ${JSON.stringify(state)}`);
+ if(!state.world.legacyPondRemoved||state.world.roadsAdded<4||!state.annexClear)throw new Error(`World placement polish missing ${JSON.stringify(state)}`);
  if(!state.routeOnRoad||state.transit.stops!==4)throw new Error(`Shuttle route leaves roads ${JSON.stringify(state)}`);
  if(state.lake.reeds<30||state.lake.lilyPads<8||state.lake.dockPlanks<10)throw new Error(`Lake polish incomplete ${JSON.stringify(state.lake)}`);
  if(state.pets<6)throw new Error(`Pet models were not upgraded ${JSON.stringify(state)}`);
