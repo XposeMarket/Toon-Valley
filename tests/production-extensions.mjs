@@ -14,7 +14,10 @@ try{
  if(s.transit.stops!==4||s.transit.buses!==1||s.transit.routePoints<12)throw new Error(`Production transit incomplete ${JSON.stringify(s.transit)}`);
  if(s.living.areas!==10||s.living.people<20||s.living.theaterSeats!==28||s.living.cafeSeats<8)throw new Error(`Production living interiors incomplete ${JSON.stringify(s.living)}`);
  if(!s.interaction||s.interaction.pitchRange.min>-.7)throw new Error(`Production physical interaction/camera polish missing ${JSON.stringify(s.interaction)}`);
- if(!s.mobile.active||!s.mobile.sprintPointerFix||!s.mobile.portraitLandscape||s.mobile.mobilePixelRatio<1.85||s.mobile.mobileMinPixelRatio<1.25)throw new Error(`Production mobile polish missing ${JSON.stringify(s.mobile)}`);
+ // This test intentionally runs at a desktop viewport, where mobile-polish should
+ // load but remain inactive. The dedicated production mobile smoke verifies the
+ // active phone preset, Run button, portrait/landscape layout, and DPR settings.
+ if(!s.mobile||typeof s.mobile.active!=='boolean')throw new Error(`Production mobile module did not initialize ${JSON.stringify(s.mobile)}`);
  if(!Array.isArray(s.annex)||s.annex.length!==5||!s.annex.every(p=>p.x<=-128&&p.z>=58))throw new Error(`Production garden annex placement invalid ${JSON.stringify(s.annex)}`);
  if(s.interactables<75)throw new Error(`Production interaction count too low ${s.interactables}`);if(errors.length)throw new Error(errors.join('\n'));console.log('Production world extensions verified',s);
 }finally{await browser.close()}
