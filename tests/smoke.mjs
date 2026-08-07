@@ -8,6 +8,10 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 if (server) await wait(900);
 const browser = await chromium.launch({ headless: true, args: ['--use-gl=swiftshader', '--enable-webgl'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 760 } });
+await page.addInitScript(() => {
+  try { Object.defineProperty(window, 'AudioContext', { configurable: true, value: undefined }); } catch {}
+  try { Object.defineProperty(window, 'webkitAudioContext', { configurable: true, value: undefined }); } catch {}
+});
 page.setDefaultTimeout(15000); page.setDefaultNavigationTimeout(45000);
 const errors = [];
 page.on('pageerror', (error) => errors.push(`pageerror: ${error.stack || error.message}`));
