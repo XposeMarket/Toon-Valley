@@ -21,7 +21,7 @@ try{
     const money0=Life.getState().player.money,trackerBefore=UI.getSummaries();
 
     const pet=byPrompt('Help Mochi get home'),petObject=pet.object,petBefore={x:petObject.position.x,z:petObject.position.z};
-    pet.action();await sleep(1120);const petStart=S.getState();
+    pet.action();await sleep(250);const petStart=S.getState();
     TV.player.position.set(petBefore.x+5,TV.terrainHeight(petBefore.x+5,petBefore.z),petBefore.z);const distanceBefore=Math.hypot(petObject.position.x-TV.player.position.x,petObject.position.z-TV.player.position.z);await sleep(950);
     const distanceAfter=Math.hypot(petObject.position.x-TV.player.position.x,petObject.position.z-TV.player.position.z),moved=Math.hypot(petObject.position.x-petBefore.x,petObject.position.z-petBefore.z),home=S.petHomes.find(h=>h.name==='Mochi');
     TV.player.position.set(home.x,TV.terrainHeight(home.x,home.z),home.z);petObject.position.set(home.x+1,TV.terrainHeight(home.x+1,home.z),home.z+.5);
@@ -31,15 +31,15 @@ try{
     const berries=TV.interactables.filter(i=>i.prompt==='Gather wild berries').slice(0,4);for(const i of berries){if(enabled(i))i.action()}const forageReady=Q.getState().forage;
     TV.enterInterior('cafe',{x:-15,z:28.1});const berryDrop=byPrompt('Hand berry basket to Ari');if(!enabled(berryDrop))throw new Error('Berry cafe handoff did not activate');berryDrop.action();TV.exitInterior();const forageDone=Q.getState().forage;
 
-    const litter=TV.interactables.filter(i=>i.prompt==='Pick up litter');for(const i of litter){if(enabled(i)){i.action();await sleep(620)}}const cleanupReady=Q.getState().cleanup;const bin=byPrompt('Drop cleanup bag in park bin');if(!enabled(bin))throw new Error('Cleanup return bin did not activate');bin.action();const cleanupDone=Q.getState().cleanup;
+    const litter=TV.interactables.filter(i=>i.prompt==='Pick up litter');for(const i of litter){if(enabled(i)){i.action();await sleep(950)}}const cleanupReady=Q.getState().cleanup;const bin=byPrompt('Drop cleanup bag in park bin');if(!enabled(bin))throw new Error(`Cleanup return bin did not activate: ${JSON.stringify(cleanupReady)}`);bin.action();const cleanupDone=Q.getState().cleanup;
 
-    TV.enterInterior('library',{x:-26,z:-19.6});const checkout=byPrompt('Check out bird survey notebook');if(!enabled(checkout))throw new Error('Bird notebook checkout missing');checkout.action();TV.exitInterior();const birds=TV.interactables.filter(i=>/^Observe /.test(i.prompt||''));for(const i of birds){if(enabled(i)){i.action();await sleep(620)}}const birdReady=Q.getState().birds;
+    TV.enterInterior('library',{x:-26,z:-19.6});const checkout=byPrompt('Check out bird survey notebook');if(!enabled(checkout))throw new Error('Bird notebook checkout missing');checkout.action();TV.exitInterior();const birds=TV.interactables.filter(i=>/^Observe /.test(i.prompt||''));for(const i of birds){if(enabled(i)){i.action();await sleep(950)}}const birdReady=Q.getState().birds;
     TV.enterInterior('library',{x:-26,z:-19.6});const birdReturn=byPrompt('Return completed bird survey to Mabel');if(!enabled(birdReturn))throw new Error('Bird survey return missing');birdReturn.action();TV.exitInterior();const birdDone=Q.getState().birds;
 
     Q.startGarden();const gardenBeds=TV.interactables.filter(i=>/^Water raised garden bed /.test(i.prompt||''));for(const i of gardenBeds){if(enabled(i))i.action()}const gardenReady=Q.getState().garden;const canReturn=byPrompt('Return watering can');if(!enabled(canReturn))throw new Error('Watering-can return missing');canReturn.action();const gardenDone=Q.getState().garden;
 
-    Q.acceptNotice();const noticeCollect=TV.interactables.find(i=>/^(Collect returned books|Collect seed packet|Collect fire-station supplies)/.test(i.prompt||'')&&enabled(i));if(!noticeCollect)throw new Error('Notice-board pickup leg missing');noticeCollect.action();await sleep(620);const noticeLoaded=Q.getState().notice;
-    const noticeDeliver=TV.interactables.find(i=>/^(Hand book bundle|Deliver seed packet|Hand supplies)/.test(i.prompt||'')&&enabled(i));if(!noticeDeliver)throw new Error('Notice-board delivery leg missing');noticeDeliver.action();await sleep(620);const noticeDone=Q.getState().notice;
+    Q.acceptNotice();const noticeCollect=TV.interactables.find(i=>/^(Collect returned books|Collect seed packet|Collect fire-station supplies)/.test(i.prompt||'')&&enabled(i));if(!noticeCollect)throw new Error('Notice-board pickup leg missing');noticeCollect.action();await sleep(950);const noticeLoaded=Q.getState().notice;
+    const noticeDeliver=TV.interactables.find(i=>/^(Hand book bundle|Deliver seed packet|Hand supplies)/.test(i.prompt||'')&&enabled(i));if(!noticeDeliver)throw new Error('Notice-board delivery leg missing');noticeDeliver.action();await sleep(950);const noticeDone=Q.getState().notice;
 
     Q.marketAction();const samples=TV.interactables.filter(i=>/^Taste market sample /.test(i.prompt||''));for(const i of samples){if(enabled(i))i.action()}const marketReady=Q.getState().market;Q.marketAction();const marketDone=Q.getState().market;
     const trackerDone=UI.getSummaries(),oldErrand=byPrompt('Complete community errand'),oldWater=TV.interactables.filter(i=>i.prompt==='Water community garden bed');
