@@ -13,6 +13,22 @@
     #build-controls,#ohbuild,#bl-controls{z-index:13000!important}
   `;
   document.head.appendChild(style);
-  window.ToonValleyUILayerFix=Object.freeze({active:true,styleId:style.id});
+
+  // Desktop camera control uses Pointer Lock, which intentionally routes mouse
+  // clicks to the canvas while captured. Keep the visible HUD useful by offering
+  // direct shortcuts that work without first pausing/releasing the mouse.
+  const shortcuts={KeyP:'phone-button',KeyI:'inventory-button',KeyT:'tasks-button'};
+  document.addEventListener('keydown',(event)=>{
+    if(event.repeat||event.altKey||event.ctrlKey||event.metaKey)return;
+    const id=shortcuts[event.code];
+    if(!id||!window.ToonValley?.state?.started||window.ToonValley.state.modalOpen)return;
+    const button=document.getElementById(id);
+    if(!button)return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    button.click();
+  },true);
+
+  window.ToonValleyUILayerFix=Object.freeze({active:true,styleId:style.id,desktopShortcuts:{phone:'P',inventory:'I',tasks:'T'}});
   console.info('Toon Valley UI layer fix ready');
 })();
