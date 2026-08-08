@@ -9,13 +9,18 @@ const requiredSW = [
   'async function networkFirst(request)',
   "event.request.mode === 'navigate'",
   "client.postMessage({ type: 'TOON_VALLEY_UPDATE_READY'",
-  'Promise.allSettled(CORE.map((url) => cache.add(url)))'
+  'Promise.allSettled(CORE.map((url) => cache.add(url)))',
+  'const hadPriorRelease = oldReleaseCaches.length > 0',
+  'if (hadPriorRelease)',
+  'client.navigate(client.url)'
 ];
 for (const snippet of requiredSW) {
   if (!sw.includes(snippet)) throw new Error(`Service-worker freshness invariant missing: ${snippet}`);
 }
 if (/cached\s*\|\|\s*network/.test(sw)) throw new Error('Release-critical service-worker path regressed to cache-first');
-if (sw.includes('client.navigate(client.url)')) throw new Error('Service-worker activation must not navigate a loading client');
+const guardIndex = sw.indexOf('if (hadPriorRelease)');
+const navigateIndex = sw.indexOf('client.navigate(client.url)');
+if (guardIndex < 0 || navigateIndex < guardIndex) throw new Error('Stale-client navigation must be guarded by prior-release detection');
 
 const requiredIndex = [
   "event.data?.type !== 'TOON_VALLEY_UPDATE_READY'",
