@@ -16,6 +16,28 @@ page.on('pageerror', (error) => errors.push(`pageerror: ${error.stack || error.m
 page.on('console', (message) => { if (message.type() === 'error') errors.push(`console: ${message.text()}`); });
 const checkpoint = (label) => console.log(`[modal-popover] ${label}`);
 
+// Headless Chromium can wedge CDP when native Pointer Lock changes during a
+// synthetic keyboard event. Use the same deterministic Pointer Lock harness as
+// Toon Valley's established desktop runtime test while keeping all modal, DOM,
+// keyboard, close, Resume, and movement behavior inside real Chromium.
+await page.addInitScript(() => {
+  try {
+    Object.defineProperty(Document.prototype, 'pointerLockElement', {
+      configurable: true,
+      get() { return this.__tvTestPointerLock || null; }
+    });
+    Element.prototype.requestPointerLock = function requestPointerLock() {
+      document.__tvTestPointerLock = this;
+      document.dispatchEvent(new Event('pointerlockchange'));
+      return Promise.resolve();
+    };
+    Document.prototype.exitPointerLock = function exitPointerLock() {
+      document.__tvTestPointerLock = null;
+      document.dispatchEvent(new Event('pointerlockchange'));
+    };
+  } catch (_) {}
+});
+
 async function requireGamePointerLock(label) {
   await page.waitForFunction(() => window.ToonValley && document.pointerLockElement === window.ToonValley.renderer.domElement, null, { timeout: 6000 });
   const locked = await page.evaluate(() => document.pointerLockElement === window.ToonValley.renderer.domElement);
@@ -67,9 +89,6 @@ try {
   }));
   if (!guard.explicitResumeAfterModal || !guard.nativeExitPointerLock || !guard.modalPauseSuppression) throw new Error(`Pointer guard capabilities missing ${JSON.stringify(guard)}`);
 
-  // Position beside a real NPC, then use the actual E-key interaction path. Do not
-  // open the modal from page.evaluate(): changing Pointer Lock inside a CDP evaluate
-  // can wedge the automation call and would not represent normal player input.
   const npcTarget = await page.evaluate(() => {
     const TV = window.ToonValley;
     const interaction = TV.interactables.find((item) => /^Talk to /.test(item.prompt || '') && typeof item.action === 'function' && item.area === 'world');
@@ -89,7 +108,13 @@ try {
   checkpoint('NPC popover opened without pause overlay');
   await closeResumeAndRequireGameplay(npcTarget.prompt);
 
-  // Prove that closing/resuming the interaction did not leave desktop gameplay invisibly paused.
+  // Move to a known-safe patch of town before proving WASD resumes.
+  await page.evaluate(() => {
+    const TV = window.ToonValley;
+    TV.player.position.set(0, TV.terrainHeight(0, 10), 10);
+    TV.playerVelocity.set(0, 0, 0);
+    TV.state.yaw = 0;
+  });
   const before = await page.evaluate(() => ({ x: window.ToonValley.player.position.x, z: window.ToonValley.player.position.z }));
   await page.keyboard.down('KeyW');
   await wait(450);
@@ -98,7 +123,6 @@ try {
   if (Math.hypot(after.x - before.x, after.z - before.z) < 0.35) throw new Error(`Gameplay did not resume after NPC popover ${JSON.stringify({ before, after })}`);
   checkpoint('WASD movement resumed');
 
-  // Cover ToonPhone through its real T shortcut and an in-modal tab replacement.
   await page.keyboard.press('KeyT');
   await requireReleasedForModal('ToonPhone Tasks');
   checkpoint('ToonPhone opened via T');
