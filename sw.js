@@ -52,14 +52,8 @@ self.addEventListener('activate', (event) => {
     const keys = await caches.keys();
     await Promise.all(keys.filter((key) => key.startsWith('toon-valley-') && key !== CACHE_NAME).map((key) => caches.delete(key)));
     await self.clients.claim();
-
-    // A previous cache-first worker could keep an already-open PWA on stale code
-    // even after production changed. Reload controlled windows once when this new
-    // worker activates so the current release takes effect immediately.
     const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    await Promise.all(windows.map(async (client) => {
-      try { await client.navigate(client.url); } catch (_) { /* installed PWAs may reject navigation while backgrounded */ }
-    }));
+    for (const client of windows) client.postMessage({ type: 'TOON_VALLEY_UPDATE_READY', cache: CACHE_NAME });
   })());
 });
 
