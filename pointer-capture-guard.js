@@ -24,8 +24,7 @@
   }
 
   const modalSelector = '.life-overlay,.mb-overlay,.ohx,#build-controls,#ohbuild,#bl-controls';
-  let restoreGameplayPointerLock = false;
-  let restoreFallbackTimer = 0;
+  let resumeAfterModal = false;
 
   function gamePointerLocked() {
     return Boolean(TV?.renderer?.domElement && document.pointerLockElement === TV.renderer.domElement);
@@ -35,91 +34,57 @@
     return Boolean(document.querySelector(modalSelector));
   }
 
-  function keepPauseScreenOutOfModalFlow() {
+  function hidePauseDuringModal() {
     document.getElementById('pause-screen')?.classList.add('hidden');
   }
 
-  function clearRestoreFallback() {
-    if (restoreFallbackTimer) clearTimeout(restoreFallbackTimer);
-    restoreFallbackTimer = 0;
-  }
-
-  function showExplicitResumeFallback() {
-    clearRestoreFallback();
-    if (!restoreGameplayPointerLock || TV?.DEVICE?.touch || !TV?.state?.started) return;
+  function showResumeAfterFinalModal() {
+    if (!resumeAfterModal || TV?.DEVICE?.touch || !TV?.state?.started) return;
     if (TV.state.modalOpen || modalUIVisible() || gamePointerLocked()) return;
-    // Never leave desktop gameplay in the old invisible-paused state. If the
-    // browser refuses an automatic Pointer Lock restore, show the normal Resume
-    // overlay so the player has an obvious user-gesture path back into the game.
+    // Re-requesting Pointer Lock from the same click that closes a DOM dialog is
+    // browser-sensitive and can wedge Chromium/WebKit. The stable flow is explicit:
+    // release for the dialog, suppress Pause while the dialog exists, then expose
+    // the normal Resume control once the final dialog is gone.
     document.getElementById('pause-screen')?.classList.remove('hidden');
-    restoreGameplayPointerLock = false;
+    resumeAfterModal = false;
   }
 
-  function restorePointerLockAfterFinalModal() {
-    if (!restoreGameplayPointerLock || TV?.DEVICE?.touch || !TV?.state?.started) return;
-    if (TV.state.modalOpen || modalUIVisible() || gamePointerLocked()) return;
-
-    keepPauseScreenOutOfModalFlow();
-    const canvas = TV.renderer?.domElement;
-    if (!canvas?.requestPointerLock) return showExplicitResumeFallback();
-
-    try {
-      const request = canvas.requestPointerLock();
-      request?.catch?.(() => showExplicitResumeFallback());
-    } catch (_) {
-      return showExplicitResumeFallback();
-    }
-
-    clearRestoreFallback();
-    restoreFallbackTimer = setTimeout(() => {
-      if (gamePointerLocked()) {
-        restoreGameplayPointerLock = false;
-        clearRestoreFallback();
-      } else {
-        showExplicitResumeFallback();
-      }
-    }, 450);
-  }
-
-  // The core game listener was registered before this module, so this listener
-  // runs afterwards without suppressing any other pointer-lock consumers. When a
-  // modal deliberately releases Pointer Lock, hide the pause overlay and remember
-  // that gameplay should be restored after the final modal/build UI closes.
+  // Core game listener runs first and may briefly reveal Pause on unlock. This
+  // listener corrects that state without cancelling pointerlockchange for any of
+  // the other input/UI modules.
   document.addEventListener('pointerlockchange', () => {
     if (!TV || TV.DEVICE.touch) return;
     if (gamePointerLocked()) {
-      restoreGameplayPointerLock = false;
-      clearRestoreFallback();
+      resumeAfterModal = false;
       return;
     }
     if (TV.state.modalOpen || modalUIVisible()) {
-      restoreGameplayPointerLock = Boolean(TV.state.started);
-      keepPauseScreenOutOfModalFlow();
+      resumeAfterModal = Boolean(TV.state.started);
+      hidePauseDuringModal();
     }
   });
 
-  // Closing a popover normally happens inside one of these user-activation events.
-  // Run after target handlers so life.js can remove/replace the modal first, then
-  // restore Pointer Lock while the browser still considers the action user-driven.
-  for (const type of ['pointerdown', 'click', 'keydown']) {
-    document.addEventListener(type, () => restorePointerLockAfterFinalModal());
-  }
-
-  // Covers programmatic modal completion. Automatic Pointer Lock may be rejected
-  // without a fresh gesture; the fallback timer then exposes the Resume overlay.
+  // Modal replacements can remove one overlay and add the next in the same task.
+  // Defer one microtask so only the actual final close reveals Resume.
   const observer = new MutationObserver(() => {
-    if (!TV || TV.DEVICE.touch) return;
-    if (!TV.state.modalOpen && !modalUIVisible()) restorePointerLockAfterFinalModal();
+    if (!TV || TV.DEVICE.touch || !resumeAfterModal) return;
+    queueMicrotask(() => showResumeAfterFinalModal());
   });
   if (document.body) observer.observe(document.body, { childList: true, subtree: true });
+
+  // Some modal code clears modalOpen after removing the node. Event listeners run
+  // after target handlers, so this catches that final state deterministically.
+  for (const type of ['click', 'keydown']) {
+    document.addEventListener(type, () => queueMicrotask(() => showResumeAfterFinalModal()));
+  }
 
   window.ToonValleyPointerGuard = Object.freeze({
     active: captureGuarded,
     pointerCapture: captureGuarded,
     modalPauseSuppression: true,
-    modalPointerRestore: true,
+    explicitResumeAfterModal: true,
     nativeExitPointerLock: true,
-    restorePending: () => restoreGameplayPointerLock
+    resumePending: () => resumeAfterModal
   });
   console.info('Toon Valley pointer/input guard ready', window.ToonValleyPointerGuard);
 })();
