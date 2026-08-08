@@ -16,9 +16,6 @@ page.on('pageerror', (error) => errors.push(`pageerror: ${error.stack || error.m
 page.on('console', (message) => { if (message.type() === 'error') errors.push(`console: ${message.text()}`); });
 const checkpoint = (label) => console.log(`[modal-popover] ${label}`);
 
-// Use the same deterministic Pointer Lock harness as the established desktop
-// runtime test. Production still uses the browser's real Pointer Lock API; this
-// shim only makes lock transitions deterministic inside headless Chromium CI.
 await page.addInitScript(() => {
   try {
     Object.defineProperty(Document.prototype, 'pointerLockElement', {
@@ -104,12 +101,15 @@ try {
   await page.waitForFunction((prompt) => document.getElementById('interaction-prompt')?.textContent.includes(prompt), npcTarget.prompt, { timeout: 6000 });
   checkpoint(`real prompt ready: ${npcTarget.prompt}`);
 
-  // This is the same DOM E event path the game listens for. Dispatching through
-  // the DOM (rather than CDP Input.dispatchKeyEvent) keeps headless Pointer Lock
-  // deterministic while still traversing window-capture preflight -> document core.
+  // Schedule the same bubbling E events on the browser's next task and return to
+  // Playwright immediately. This keeps the driver outside the Pointer Lock event
+  // stack, so a genuine page freeze becomes a short observable timeout instead of
+  // wedging Runtime.evaluate for the full process timeout.
   await page.evaluate(() => {
-    document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyE', key: 'e', bubbles: true, cancelable: true }));
-    document.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyE', key: 'e', bubbles: true, cancelable: true }));
+    setTimeout(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyE', key: 'e', bubbles: true, cancelable: true }));
+      document.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyE', key: 'e', bubbles: true, cancelable: true }));
+    }, 0);
   });
   await requireReleasedForModal(npcTarget.prompt);
   checkpoint('E interaction opened NPC popover after safe unlock');
@@ -129,9 +129,9 @@ try {
   if (Math.hypot(after.x - before.x, after.z - before.z) < 0.35) throw new Error(`Gameplay did not resume after NPC popover ${JSON.stringify({ before, after })}`);
   checkpoint('WASD movement resumed');
 
-  // ToonPhone already has its own pre-release path. Verify it can replace tabs and
-  // close into the same explicit Resume lifecycle without overlapping Pause.
-  await page.evaluate(() => window.ToonValleyUILayerFix.openTab('tasks'));
+  await page.evaluate(() => {
+    setTimeout(() => window.ToonValleyUILayerFix.openTab('tasks'), 0);
+  });
   await requireReleasedForModal('ToonPhone Tasks');
   checkpoint('ToonPhone opened through desktop UI layer');
   await page.click('[data-tab="inventory"]');
