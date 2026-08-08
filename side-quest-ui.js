@@ -18,6 +18,7 @@
     const neighborhood=window.ToonValleyNeighborhoodQuests?.getSummaries?.();if(Array.isArray(neighborhood))list.push(...neighborhood);
     const civic=window.ToonValleyCivicQuests?.getSummaries?.();if(Array.isArray(civic))list.push(...civic);
     const services=window.ToonValleyTownServiceQuests?.getSummaries?.();if(Array.isArray(services))list.push(...services);
+    const indoor=window.ToonValleyIndoorServiceQuests?.getSummaries?.();if(Array.isArray(indoor))list.push(...indoor);
     return list;
   }
   function render(){
