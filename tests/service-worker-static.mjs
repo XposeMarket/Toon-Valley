@@ -24,7 +24,9 @@ if (guardIndex < 0 || navigateIndex < guardIndex) throw new Error('Stale-client 
 const requiredGuard = [
   'explicitResumeAfterModal: true',
   'modalPauseSuppression: true',
-  'nativeExitPointerLock: true',
+  'modalExitDeferred',
+  '__toonValleyDeferredModalExit',
+  'setTimeout(() =>',
   'showResumeAfterFinalModal'
 ];
 for (const snippet of requiredGuard) {
@@ -32,8 +34,6 @@ for (const snippet of requiredGuard) {
 }
 if (guard.includes('requestPointerLock')) throw new Error('Popover close path must not request Pointer Lock from the closing dialog event');
 if (guard.includes('stopImmediatePropagation')) throw new Error('Pointer-lock events must not be globally suppressed');
-if (guard.includes('__toonValleyModalGuarded') || guard.includes('Document?.prototype') && guard.includes('exitPointerLock')) {
-  throw new Error('Native Document.exitPointerLock must not be monkey-patched');
-}
+if (!guard.includes("if (window.ToonValley?.state?.modalOpen)")) throw new Error('Deferred Pointer Lock exit must be scoped to active modal UI');
 
 console.log('Toon Valley service-worker stale-upgrade and popover input invariants passed.');
