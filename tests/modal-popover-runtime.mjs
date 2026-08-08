@@ -9,11 +9,12 @@ if (server) await wait(900);
 
 const browser = await chromium.launch({ headless: true, args: ['--use-gl=swiftshader', '--enable-webgl'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 760 } });
-page.setDefaultTimeout(12000);
+page.setDefaultTimeout(10000);
 page.setDefaultNavigationTimeout(45000);
 const errors = [];
 page.on('pageerror', (error) => errors.push(`pageerror: ${error.stack || error.message}`));
 page.on('console', (message) => { if (message.type() === 'error') errors.push(`console: ${message.text()}`); });
+const checkpoint = (label) => console.log(`[modal-popover] ${label}`);
 
 async function requireGamePointerLock(label) {
   await page.waitForFunction(() => window.ToonValley && document.pointerLockElement === window.ToonValley.renderer.domElement, null, { timeout: 6000 });
@@ -22,7 +23,7 @@ async function requireGamePointerLock(label) {
 }
 
 async function requireReleasedForModal(label) {
-  await page.waitForSelector('.life-overlay');
+  await page.waitForSelector('.life-overlay', { timeout: 6000 });
   await page.waitForFunction(() => !document.pointerLockElement && window.ToonValley.state.modalOpen === true, null, { timeout: 6000 });
   const state = await page.evaluate(() => ({
     modalOpen: window.ToonValley.state.modalOpen,
@@ -33,7 +34,7 @@ async function requireReleasedForModal(label) {
 }
 
 async function closeResumeAndRequireGameplay(label) {
-  await page.locator('.life-close').dispatchEvent('click');
+  await page.click('.life-close');
   await page.waitForFunction(() => !document.querySelector('.life-overlay') && window.ToonValley.state.modalOpen === false, null, { timeout: 6000 });
   await page.waitForFunction(() => !document.getElementById('pause-screen').classList.contains('hidden'), null, { timeout: 6000 });
   const resumeState = await page.evaluate(() => ({
@@ -42,18 +43,22 @@ async function closeResumeAndRequireGameplay(label) {
     modalOpen: window.ToonValley.state.modalOpen
   }));
   if (!resumeState.pauseVisible || resumeState.pointerLocked || resumeState.modalOpen) throw new Error(`${label}: explicit resume state invalid ${JSON.stringify(resumeState)}`);
+  checkpoint(`${label}: explicit Resume shown`);
   await page.click('#resume-button');
   await requireGamePointerLock(`${label} resume`);
   const pauseHidden = await page.evaluate(() => document.getElementById('pause-screen').classList.contains('hidden'));
   if (!pauseHidden) throw new Error(`${label}: pause overlay remained after Resume`);
+  checkpoint(`${label}: gameplay pointer lock restored`);
 }
 
 try {
   await page.goto(remoteURL || 'http://127.0.0.1:4173', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.ToonValley && window.ToonValleyLife && window.ToonValleyPointerGuard, null, { timeout: 30000 });
+  checkpoint('game globals ready');
   await page.click('#play-button');
   await page.waitForFunction(() => window.ToonValley.state.started === true);
   await requireGamePointerLock('initial play');
+  checkpoint('initial pointer lock active');
 
   const guard = await page.evaluate(() => ({
     explicitResumeAfterModal: window.ToonValleyPointerGuard.explicitResumeAfterModal,
@@ -62,15 +67,27 @@ try {
   }));
   if (!guard.explicitResumeAfterModal || !guard.nativeExitPointerLock || !guard.modalPauseSuppression) throw new Error(`Pointer guard capabilities missing ${JSON.stringify(guard)}`);
 
-  const npcPrompt = await page.evaluate(() => {
+  // Position beside a real NPC, then use the actual E-key interaction path. Do not
+  // open the modal from page.evaluate(): changing Pointer Lock inside a CDP evaluate
+  // can wedge the automation call and would not represent normal player input.
+  const npcTarget = await page.evaluate(() => {
     const TV = window.ToonValley;
-    const interaction = TV.interactables.find((item) => /^Talk to /.test(item.prompt || '') && typeof item.action === 'function');
-    if (!interaction) throw new Error('No NPC talk interaction found');
-    interaction.action();
-    return interaction.prompt;
+    const interaction = TV.interactables.find((item) => /^Talk to /.test(item.prompt || '') && typeof item.action === 'function' && item.area === 'world');
+    if (!interaction) throw new Error('No outdoor NPC talk interaction found');
+    const x = interaction.object ? interaction.object.position.x : interaction.x;
+    const z = interaction.object ? interaction.object.position.z : interaction.z;
+    TV.state.area = 'world';
+    TV.player.position.set(x, TV.terrainHeight(x, z), z);
+    TV.playerVelocity.set(0, 0, 0);
+    TV.state.cameraReady = false;
+    return { prompt: interaction.prompt, x, z };
   });
-  await requireReleasedForModal(npcPrompt);
-  await closeResumeAndRequireGameplay(npcPrompt);
+  await page.waitForFunction((prompt) => document.getElementById('interaction-prompt')?.textContent.includes(prompt), npcTarget.prompt, { timeout: 6000 });
+  checkpoint(`real prompt ready: ${npcTarget.prompt}`);
+  await page.keyboard.press('KeyE');
+  await requireReleasedForModal(npcTarget.prompt);
+  checkpoint('NPC popover opened without pause overlay');
+  await closeResumeAndRequireGameplay(npcTarget.prompt);
 
   // Prove that closing/resuming the interaction did not leave desktop gameplay invisibly paused.
   const before = await page.evaluate(() => ({ x: window.ToonValley.player.position.x, z: window.ToonValley.player.position.z }));
@@ -79,18 +96,21 @@ try {
   await page.keyboard.up('KeyW');
   const after = await page.evaluate(() => ({ x: window.ToonValley.player.position.x, z: window.ToonValley.player.position.z }));
   if (Math.hypot(after.x - before.x, after.z - before.z) < 0.35) throw new Error(`Gameplay did not resume after NPC popover ${JSON.stringify({ before, after })}`);
+  checkpoint('WASD movement resumed');
 
-  // Cover a second modal family and replacement path through ToonPhone.
-  await page.evaluate(() => window.ToonValleyLife.openPhone('tasks'));
+  // Cover ToonPhone through its real T shortcut and an in-modal tab replacement.
+  await page.keyboard.press('KeyT');
   await requireReleasedForModal('ToonPhone Tasks');
-  await page.locator('[data-tab="inventory"]').dispatchEvent('click');
-  await page.waitForSelector('.life-overlay [data-tab="inventory"].active');
+  checkpoint('ToonPhone opened via T');
+  await page.click('[data-tab="inventory"]');
+  await page.waitForSelector('.life-overlay [data-tab="inventory"].active', { timeout: 6000 });
   const replacement = await page.evaluate(() => ({ modalOpen: window.ToonValley.state.modalOpen, pointerLocked: Boolean(document.pointerLockElement), pauseHidden: document.getElementById('pause-screen').classList.contains('hidden') }));
   if (!replacement.modalOpen || replacement.pointerLocked || !replacement.pauseHidden) throw new Error(`ToonPhone modal replacement regression ${JSON.stringify(replacement)}`);
+  checkpoint('ToonPhone modal replacement stayed stable');
   await closeResumeAndRequireGameplay('ToonPhone replacement');
 
   if (errors.length) throw new Error(errors.join('\n'));
-  console.log(`Toon Valley modal/popover lifecycle passed: ${remoteURL || 'localhost'}`, { npcPrompt, before, after, guard });
+  console.log(`Toon Valley modal/popover lifecycle passed: ${remoteURL || 'localhost'}`, { npcTarget, before, after, guard });
 } finally {
   await browser.close();
   server?.kill('SIGTERM');
