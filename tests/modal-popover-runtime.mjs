@@ -101,19 +101,33 @@ try {
   await page.waitForFunction((prompt) => document.getElementById('interaction-prompt')?.textContent.includes(prompt), npcTarget.prompt, { timeout: 6000 });
   checkpoint(`real prompt ready: ${npcTarget.prompt}`);
 
-  const actionReturned = await page.evaluate(() => {
+  // Invoke the already-resolved world interaction from a normal browser click
+  // event, not Runtime.evaluate. This mirrors the user gesture call stack and also
+  // proves the action returns after modal construction rather than wedging the page.
+  await page.evaluate(() => {
     const selected = window.ToonValley.state.nearestInteractable;
     if (!selected || typeof selected.action !== 'function') throw new Error('No selected world interaction action');
-    selected.action();
-    return { modalOpen: window.ToonValley.state.modalOpen, overlay: Boolean(document.querySelector('.life-overlay')) };
+    const trigger = document.createElement('button');
+    trigger.id = 'tv-modal-test-trigger';
+    trigger.textContent = 'OPEN INTERACTION';
+    trigger.style.cssText = 'position:fixed;left:8px;top:8px;z-index:2147483647;width:160px;height:44px';
+    trigger.addEventListener('click', () => {
+      selected.action();
+      trigger.dataset.returned = 'true';
+    });
+    document.body.appendChild(trigger);
   });
-  if (!actionReturned.modalOpen || !actionReturned.overlay) throw new Error(`NPC action did not finish modal construction ${JSON.stringify(actionReturned)}`);
+  await page.mouse.click(40, 28);
+  await page.waitForSelector('.life-overlay', { timeout: 6000 });
+  const actionReturned = await page.getAttribute('#tv-modal-test-trigger', 'data-returned');
+  if (actionReturned !== 'true') throw new Error('NPC action did not return after modal construction');
   checkpoint('NPC action returned after constructing popover');
   await requireReleasedForModal(npcTarget.prompt);
   checkpoint('NPC popover opened without pause overlay');
   await closeResumeAndRequireGameplay(npcTarget.prompt);
 
   await page.evaluate(() => {
+    document.getElementById('tv-modal-test-trigger')?.remove();
     const TV = window.ToonValley;
     TV.player.position.set(0, TV.terrainHeight(0, 10), 10);
     TV.playerVelocity.set(0, 0, 0);
