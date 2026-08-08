@@ -16,9 +16,9 @@ page.on('pageerror', (error) => errors.push(`pageerror: ${error.stack || error.m
 page.on('console', (message) => { if (message.type() === 'error') errors.push(`console: ${message.text()}`); });
 const checkpoint = (label) => console.log(`[modal-popover] ${label}`);
 
-// Headless Chromium can wedge CDP when native Pointer Lock changes during
-// synthetic input. Use the repo's deterministic Pointer Lock harness while keeping
-// the actual game scene, modal DOM, close/Resume controls, and movement in Chromium.
+// Headless Chromium can wedge CDP when native Pointer Lock changes synchronously
+// during an interaction. The game fix defers modal-triggered exits; this deterministic
+// lock harness keeps the real Chromium DOM/game lifecycle observable in CI.
 await page.addInitScript(() => {
   try {
     Object.defineProperty(Document.prototype, 'pointerLockElement', {
@@ -81,10 +81,10 @@ try {
 
   const guard = await page.evaluate(() => ({
     explicitResumeAfterModal: window.ToonValleyPointerGuard.explicitResumeAfterModal,
-    nativeExitPointerLock: window.ToonValleyPointerGuard.nativeExitPointerLock,
+    modalExitDeferred: window.ToonValleyPointerGuard.modalExitDeferred,
     modalPauseSuppression: window.ToonValleyPointerGuard.modalPauseSuppression
   }));
-  if (!guard.explicitResumeAfterModal || !guard.nativeExitPointerLock || !guard.modalPauseSuppression) throw new Error(`Pointer guard capabilities missing ${JSON.stringify(guard)}`);
+  if (!guard.explicitResumeAfterModal || !guard.modalExitDeferred || !guard.modalPauseSuppression) throw new Error(`Pointer guard capabilities missing ${JSON.stringify(guard)}`);
 
   const npcTarget = await page.evaluate(() => {
     const TV = window.ToonValley;
@@ -101,14 +101,14 @@ try {
   await page.waitForFunction((prompt) => document.getElementById('interaction-prompt')?.textContent.includes(prompt), npcTarget.prompt, { timeout: 6000 });
   checkpoint(`real prompt ready: ${npcTarget.prompt}`);
 
-  // The world prompt proves the normal interaction resolver selected this NPC. Call
-  // that selected interaction's real action directly so the test focuses on the
-  // reported failure boundary: popover construction + Pointer Lock release/close.
-  await page.evaluate(() => {
+  const actionReturned = await page.evaluate(() => {
     const selected = window.ToonValley.state.nearestInteractable;
     if (!selected || typeof selected.action !== 'function') throw new Error('No selected world interaction action');
     selected.action();
+    return { modalOpen: window.ToonValley.state.modalOpen, overlay: Boolean(document.querySelector('.life-overlay')) };
   });
+  if (!actionReturned.modalOpen || !actionReturned.overlay) throw new Error(`NPC action did not finish modal construction ${JSON.stringify(actionReturned)}`);
+  checkpoint('NPC action returned after constructing popover');
   await requireReleasedForModal(npcTarget.prompt);
   checkpoint('NPC popover opened without pause overlay');
   await closeResumeAndRequireGameplay(npcTarget.prompt);
@@ -127,8 +127,6 @@ try {
   if (Math.hypot(after.x - before.x, after.z - before.z) < 0.35) throw new Error(`Gameplay did not resume after NPC popover ${JSON.stringify({ before, after })}`);
   checkpoint('WASD movement resumed');
 
-  // Exercise the same pointer-lock-safe desktop UI layer used by P/T/I. Shortcut
-  // key mapping itself remains covered by navigation-polish-runtime.mjs.
   await page.evaluate(() => window.ToonValleyUILayerFix.openTab('tasks'));
   await requireReleasedForModal('ToonPhone Tasks');
   checkpoint('ToonPhone opened through desktop UI layer');
