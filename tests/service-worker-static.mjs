@@ -17,14 +17,15 @@ if (/cached\s*\|\|\s*network/.test(sw)) throw new Error('Release-critical servic
 if (sw.includes('client.navigate(client.url)')) throw new Error('Service-worker activation must not navigate a loading client');
 
 const requiredGuard = [
-  'modalPointerRestore: true',
+  'explicitResumeAfterModal: true',
+  'modalPauseSuppression: true',
   'nativeExitPointerLock: true',
-  'restorePointerLockAfterFinalModal',
-  'showExplicitResumeFallback'
+  'showResumeAfterFinalModal'
 ];
 for (const snippet of requiredGuard) {
   if (!guard.includes(snippet)) throw new Error(`Popover input invariant missing: ${snippet}`);
 }
+if (guard.includes('requestPointerLock')) throw new Error('Popover close path must not request Pointer Lock from the closing dialog event');
 if (guard.includes('stopImmediatePropagation')) throw new Error('Pointer-lock events must not be globally suppressed');
 if (guard.includes('__toonValleyModalGuarded') || guard.includes('Document?.prototype') && guard.includes('exitPointerLock')) {
   throw new Error('Native Document.exitPointerLock must not be monkey-patched');
