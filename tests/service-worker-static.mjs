@@ -2,6 +2,7 @@ import fs from 'node:fs';
 
 const sw = fs.readFileSync('sw.js', 'utf8');
 const guard = fs.readFileSync('pointer-capture-guard.js', 'utf8');
+const index = fs.readFileSync('index.html', 'utf8');
 
 const requiredSW = [
   "const CACHE_NAME = 'toon-valley-v33'",
@@ -15,6 +16,16 @@ for (const snippet of requiredSW) {
 }
 if (/cached\s*\|\|\s*network/.test(sw)) throw new Error('Release-critical service-worker path regressed to cache-first');
 if (sw.includes('client.navigate(client.url)')) throw new Error('Service-worker activation must not navigate a loading client');
+
+const requiredIndex = [
+  "event.data?.type !== 'TOON_VALLEY_UPDATE_READY'",
+  'toon-valley-reloaded-${event.data.cache}',
+  "sessionStorage.setItem(key, '1')",
+  'location.reload()'
+];
+for (const snippet of requiredIndex) {
+  if (!index.includes(snippet)) throw new Error(`PWA update bridge invariant missing: ${snippet}`);
+}
 
 const requiredGuard = [
   'explicitResumeAfterModal: true',
@@ -31,4 +42,4 @@ if (guard.includes('__toonValleyModalGuarded') || guard.includes('Document?.prot
   throw new Error('Native Document.exitPointerLock must not be monkey-patched');
 }
 
-console.log('Toon Valley service-worker and popover input invariants passed.');
+console.log('Toon Valley service-worker, stale-PWA refresh, and popover input invariants passed.');
