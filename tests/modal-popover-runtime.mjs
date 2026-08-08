@@ -19,7 +19,7 @@ const checkpoint = (label) => console.log(`[modal-popover] ${label}`);
 // Headless Chromium can wedge CDP when native Pointer Lock changes during a
 // synthetic keyboard event. Use the same deterministic Pointer Lock harness as
 // Toon Valley's established desktop runtime test while keeping all modal, DOM,
-// keyboard, close, Resume, and movement behavior inside real Chromium.
+// shortcut, close, Resume, and movement behavior inside real Chromium.
 await page.addInitScript(() => {
   try {
     Object.defineProperty(Document.prototype, 'pointerLockElement', {
@@ -37,6 +37,13 @@ await page.addInitScript(() => {
     };
   } catch (_) {}
 });
+
+async function dispatchGameKey(code, key) {
+  await page.evaluate(({ code, key }) => {
+    document.dispatchEvent(new KeyboardEvent('keydown', { code, key, bubbles: true, cancelable: true }));
+    document.dispatchEvent(new KeyboardEvent('keyup', { code, key, bubbles: true, cancelable: true }));
+  }, { code, key });
+}
 
 async function requireGamePointerLock(label) {
   await page.waitForFunction(() => window.ToonValley && document.pointerLockElement === window.ToonValley.renderer.domElement, null, { timeout: 6000 });
@@ -103,7 +110,10 @@ try {
   });
   await page.waitForFunction((prompt) => document.getElementById('interaction-prompt')?.textContent.includes(prompt), npcTarget.prompt, { timeout: 6000 });
   checkpoint(`real prompt ready: ${npcTarget.prompt}`);
-  await page.keyboard.press('KeyE');
+  // Dispatch through the document so Toon Valley's actual keydown -> interact()
+  // listener owns the action. Playwright Input.dispatchKeyEvent can deadlock when
+  // the handler synchronously changes Pointer Lock, even with the deterministic shim.
+  await dispatchGameKey('KeyE', 'e');
   await requireReleasedForModal(npcTarget.prompt);
   checkpoint('NPC popover opened without pause overlay');
   await closeResumeAndRequireGameplay(npcTarget.prompt);
@@ -123,7 +133,8 @@ try {
   if (Math.hypot(after.x - before.x, after.z - before.z) < 0.35) throw new Error(`Gameplay did not resume after NPC popover ${JSON.stringify({ before, after })}`);
   checkpoint('WASD movement resumed');
 
-  await page.keyboard.press('KeyT');
+  // Exercise the actual ToonPhone T shortcut through its document key listener too.
+  await dispatchGameKey('KeyT', 't');
   await requireReleasedForModal('ToonPhone Tasks');
   checkpoint('ToonPhone opened via T');
   await page.click('[data-tab="inventory"]');
