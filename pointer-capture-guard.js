@@ -1,8 +1,11 @@
 (() => {
   'use strict';
+
+  const TV = window.ToonValley;
   const elementProto = globalThis.Element?.prototype;
   const nativeCapture = elementProto?.setPointerCapture;
   let captureGuarded = Boolean(nativeCapture?.__toonValleyGuarded);
+
   if (elementProto && typeof nativeCapture === 'function' && !captureGuarded) {
     function guardedSetPointerCapture(pointerId) {
       try {
@@ -20,44 +23,68 @@
     captureGuarded = true;
   }
 
-  const documentProto = globalThis.Document?.prototype;
-  const nativeExit = documentProto?.exitPointerLock;
-  let modalExitGuarded = Boolean(nativeExit?.__toonValleyModalGuarded);
-  if (documentProto && typeof nativeExit === 'function' && !modalExitGuarded) {
-    function guardedExitPointerLock() {
-      // Life/shop/theater modals mark modalOpen before asking to release pointer
-      // lock. Releasing synchronously from the same interaction call can re-enter
-      // pointerlockchange while that UI is still being constructed. Defer only that
-      // modal-opening case; ordinary Esc/pause pointer-lock behavior stays native.
-      if (window.ToonValley?.state?.modalOpen) {
-        const doc = this;
-        setTimeout(() => {
-          try { nativeExit.call(doc); } catch (error) { console.warn('Deferred pointer-lock release failed', error); }
-        }, 0);
-        return undefined;
-      }
-      return nativeExit.call(this);
-    }
-    guardedExitPointerLock.__toonValleyModalGuarded = true;
-    documentProto.exitPointerLock = guardedExitPointerLock;
-    modalExitGuarded = true;
+  const modalSelector = '.life-overlay,.mb-overlay,.ohx,#build-controls,#ohbuild,#bl-controls';
+  let resumeAfterModal = false;
+
+  function gamePointerLocked() {
+    return Boolean(TV?.renderer?.domElement && document.pointerLockElement === TV.renderer.domElement);
   }
 
-  // Modal/popover interactions deliberately release pointer lock so the mouse can
-  // operate the UI. The core game's pointerlockchange listener normally interprets
-  // any unlock as a pause request. Intercept that event during a modal release so
-  // the pause screen cannot cover the popover and make the game appear to crash.
-  document.addEventListener('pointerlockchange', (event) => {
-    if (!window.ToonValley?.state?.modalOpen) return;
+  function modalUIVisible() {
+    return Boolean(document.querySelector(modalSelector));
+  }
+
+  function hidePauseDuringModal() {
     document.getElementById('pause-screen')?.classList.add('hidden');
-    event.stopImmediatePropagation();
-  }, true);
+  }
+
+  function showResumeAfterFinalModal() {
+    if (!resumeAfterModal || TV?.DEVICE?.touch || !TV?.state?.started) return;
+    if (TV.state.modalOpen || modalUIVisible() || gamePointerLocked()) return;
+    // Re-requesting Pointer Lock from the same click that closes a DOM dialog is
+    // browser-sensitive and can wedge Chromium/WebKit. The stable flow is explicit:
+    // release for the dialog, suppress Pause while the dialog exists, then expose
+    // the normal Resume control once the final dialog is gone.
+    document.getElementById('pause-screen')?.classList.remove('hidden');
+    resumeAfterModal = false;
+  }
+
+  // Core game listener runs first and may briefly reveal Pause on unlock. This
+  // listener corrects that state without cancelling pointerlockchange for any of
+  // the other input/UI modules.
+  document.addEventListener('pointerlockchange', () => {
+    if (!TV || TV.DEVICE.touch) return;
+    if (gamePointerLocked()) {
+      resumeAfterModal = false;
+      return;
+    }
+    if (TV.state.modalOpen || modalUIVisible()) {
+      resumeAfterModal = Boolean(TV.state.started);
+      hidePauseDuringModal();
+    }
+  });
+
+  // Modal replacements can remove one overlay and add the next in the same task.
+  // Defer one microtask so only the actual final close reveals Resume.
+  const observer = new MutationObserver(() => {
+    if (!TV || TV.DEVICE.touch || !resumeAfterModal) return;
+    queueMicrotask(() => showResumeAfterFinalModal());
+  });
+  if (document.body) observer.observe(document.body, { childList: true, subtree: true });
+
+  // Some modal code clears modalOpen after removing the node. Event listeners run
+  // after target handlers, so this catches that final state deterministically.
+  for (const type of ['click', 'keydown']) {
+    document.addEventListener(type, () => queueMicrotask(() => showResumeAfterFinalModal()));
+  }
 
   window.ToonValleyPointerGuard = Object.freeze({
     active: captureGuarded,
     pointerCapture: captureGuarded,
-    modalExit: modalExitGuarded,
-    modalPauseSuppression: true
+    modalPauseSuppression: true,
+    explicitResumeAfterModal: true,
+    nativeExitPointerLock: true,
+    resumePending: () => resumeAfterModal
   });
   console.info('Toon Valley pointer/input guard ready', window.ToonValleyPointerGuard);
 })();
