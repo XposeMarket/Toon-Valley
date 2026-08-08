@@ -43,6 +43,21 @@
     modalExitGuarded = true;
   }
 
-  window.ToonValleyPointerGuard = Object.freeze({ active: captureGuarded, pointerCapture: captureGuarded, modalExit: modalExitGuarded });
+  // Modal/popover interactions deliberately release pointer lock so the mouse can
+  // operate the UI. The core game's pointerlockchange listener normally interprets
+  // any unlock as a pause request. Intercept that event during a modal release so
+  // the pause screen cannot cover the popover and make the game appear to crash.
+  document.addEventListener('pointerlockchange', (event) => {
+    if (!window.ToonValley?.state?.modalOpen) return;
+    document.getElementById('pause-screen')?.classList.add('hidden');
+    event.stopImmediatePropagation();
+  }, true);
+
+  window.ToonValleyPointerGuard = Object.freeze({
+    active: captureGuarded,
+    pointerCapture: captureGuarded,
+    modalExit: modalExitGuarded,
+    modalPauseSuppression: true
+  });
   console.info('Toon Valley pointer/input guard ready', window.ToonValleyPointerGuard);
 })();
