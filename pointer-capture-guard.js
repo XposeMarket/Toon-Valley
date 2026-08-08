@@ -26,22 +26,25 @@
   const documentProto = globalThis.Document?.prototype;
   const nativeExitPointerLock = documentProto?.exitPointerLock;
   let modalExitDeferred = Boolean(nativeExitPointerLock?.__toonValleyDeferredModalExit);
+  let modalExitTimer = 0;
   if (documentProto && typeof nativeExitPointerLock === 'function' && !modalExitDeferred) {
     function guardedExitPointerLock() {
       // life.js builds the dialog and marks modalOpen before asking Pointer Lock to
-      // exit. Let that interaction/action stack return first; firing
-      // pointerlockchange synchronously while the popover is still being assembled
-      // can re-enter game/pause UI code and wedge Chromium/WebKit.
+      // exit. Give the original interaction a full event/paint boundary before
+      // pointerlockchange can re-enter pause/UI code. A zero-delay task was still
+      // close enough to wedge Chromium/WebKit on some interaction stacks.
       if (window.ToonValley?.state?.modalOpen) {
         const doc = this;
-        setTimeout(() => {
+        clearTimeout(modalExitTimer);
+        modalExitTimer = setTimeout(() => {
+          modalExitTimer = 0;
           if (!window.ToonValley?.state?.modalOpen || !doc.pointerLockElement) return;
           try {
             nativeExitPointerLock.call(doc);
           } catch (error) {
             console.warn('Deferred modal Pointer Lock release failed', error);
           }
-        }, 0);
+        }, 80);
         return undefined;
       }
       return nativeExitPointerLock.call(this);
@@ -109,6 +112,7 @@
     active: captureGuarded,
     pointerCapture: captureGuarded,
     modalExitDeferred,
+    modalExitDelayMs: 80,
     modalPauseSuppression: true,
     explicitResumeAfterModal: true,
     resumePending: () => resumeAfterModal
