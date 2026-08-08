@@ -25,20 +25,6 @@
   </div>
   <div id="start-screen" class="overlay"><div class="card"><div class="eyebrow">A complete lightweight toon life simulator</div><h1>TOON<br />VALLEY</h1><p>Build a life in a growing cel-shaded town. Work silly jobs, earn money, shop, make friends, decorate your saved home, and help Toon Valley expand.</p><div class="quality-picker" aria-label="Graphics quality"><button class="quality" data-quality="mobile">Mobile / Battery</button><button class="quality active" data-quality="low">Low — 2019 MacBook Air</button><button class="quality" data-quality="medium">Medium</button></div><button id="play-button" class="play">ENTER TOON VALLEY</button><small class="desktop-help">Mouse controls the camera. P opens Phone, T opens Tasks, I opens Bag.</small><small class="mobile-help">Left thumb moves. Drag the right side to look. Use the three action buttons.</small><div id="load-error" class="error hidden">Three.js could not load. Check the game files, then refresh.</div></div></div>
   <div id="pause-screen" class="overlay hidden"><div class="card small-card"><div class="eyebrow">Paused</div><h2>Back to the valley?</h2><button id="resume-button" class="play">RESUME</button><small>Click anywhere in the game to recapture the mouse.</small></div></div>
-  <script>
-    // The worker announces a newly activated release. Existing installed/PWA
-    // windows reload exactly once for that cache version so a hotfix cannot remain
-    // hidden behind already-executing stale JavaScript until the app is killed.
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.addEventListener('message', (event) => {
-        if (event.data?.type !== 'TOON_VALLEY_UPDATE_READY' || !event.data.cache) return;
-        const key = `toon-valley-reloaded-${event.data.cache}`;
-        if (sessionStorage.getItem(key)) return;
-        sessionStorage.setItem(key, '1');
-        location.reload();
-      });
-    }
-  </script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.152.2/three.min.js" referrerpolicy="no-referrer"></script>
   <script src="game.js"></script><script src="life.js"></script><script src="pointer-capture-guard.js"></script><script src="ui-layer-fix.js"></script><script src="world-events.js"></script><script src="town-activities.js"></script><script src="valley-services.js"></script><script src="valley-routines.js"></script><script src="central-plaza.js"></script><script src="public-interiors.js"></script><script src="moonbeam-theater.js"></script><script src="owned-home.js"></script><script src="world-polish.js"></script><script src="bluebell-lake.js"></script><script src="interaction-world-fix.js"></script><script src="valley-transit.js"></script><script src="community-garden.js"></script><script src="valley-community-life.js"></script><script src="living-interiors.js"></script><script src="navigation-polish.js"></script><script src="side-quest-overhaul.js"></script><script src="side-quest-routine-bridge.js"></script><script src="neighborhood-quests.js"></script><script src="civic-quests.js"></script><script src="town-service-quests.js"></script><script src="indoor-service-quests.js"></script><script src="side-quest-ui.js"></script><script src="interaction-experience.js"></script><script src="swing-exit-fix.js"></script><script src="npc-building-life.js"></script><script src="mobile-polish.js"></script><script src="camera-experience-polish.js"></script><script src="movement-speed-polish.js"></script>
 </body>
