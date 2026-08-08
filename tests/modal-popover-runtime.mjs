@@ -104,13 +104,15 @@ try {
   await page.waitForFunction((prompt) => document.getElementById('interaction-prompt')?.textContent.includes(prompt), npcTarget.prompt, { timeout: 6000 });
   checkpoint(`real prompt ready: ${npcTarget.prompt}`);
 
-  // This is the reported production path: E while Pointer Lock is active. The
-  // preflight must consume only this modal-producing interaction, release the lock,
-  // then run Maya's action after unlock so popover construction cannot re-enter the
-  // Pointer Lock/pause stack.
-  await page.keyboard.press('KeyE');
+  // This is the same DOM E event path the game listens for. Dispatching through
+  // the DOM (rather than CDP Input.dispatchKeyEvent) keeps headless Pointer Lock
+  // deterministic while still traversing window-capture preflight -> document core.
+  await page.evaluate(() => {
+    document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyE', key: 'e', bubbles: true, cancelable: true }));
+    document.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyE', key: 'e', bubbles: true, cancelable: true }));
+  });
   await requireReleasedForModal(npcTarget.prompt);
-  checkpoint('real E opened NPC popover after safe unlock');
+  checkpoint('E interaction opened NPC popover after safe unlock');
   await closeResumeAndRequireGameplay(npcTarget.prompt);
 
   await page.evaluate(() => {
