@@ -16,9 +16,9 @@ page.on('pageerror', (error) => errors.push(`pageerror: ${error.stack || error.m
 page.on('console', (message) => { if (message.type() === 'error') errors.push(`console: ${message.text()}`); });
 const checkpoint = (label) => console.log(`[modal-popover] ${label}`);
 
-// Headless Chromium can wedge CDP when native Pointer Lock changes synchronously
-// during an interaction. The game fix defers modal-triggered exits; this deterministic
-// lock harness keeps the real Chromium DOM/game lifecycle observable in CI.
+// Use the same deterministic Pointer Lock harness as the established desktop
+// runtime test. Production still uses the browser's real Pointer Lock API; this
+// shim only makes lock transitions deterministic inside headless Chromium CI.
 await page.addInitScript(() => {
   try {
     Object.defineProperty(Document.prototype, 'pointerLockElement', {
@@ -48,9 +48,10 @@ async function requireReleasedForModal(label) {
   const state = await page.evaluate(() => ({
     modalOpen: window.ToonValley.state.modalOpen,
     pauseHidden: document.getElementById('pause-screen').classList.contains('hidden'),
-    pointerLocked: Boolean(document.pointerLockElement)
+    pointerLocked: Boolean(document.pointerLockElement),
+    pending: window.ToonValleyPointerGuard.pendingInteraction()
   }));
-  if (!state.modalOpen || !state.pauseHidden || state.pointerLocked) throw new Error(`${label}: modal release regression ${JSON.stringify(state)}`);
+  if (!state.modalOpen || !state.pauseHidden || state.pointerLocked || state.pending) throw new Error(`${label}: modal release regression ${JSON.stringify(state)}`);
 }
 
 async function closeResumeAndRequireGameplay(label) {
@@ -82,9 +83,11 @@ try {
   const guard = await page.evaluate(() => ({
     explicitResumeAfterModal: window.ToonValleyPointerGuard.explicitResumeAfterModal,
     modalExitDeferred: window.ToonValleyPointerGuard.modalExitDeferred,
-    modalPauseSuppression: window.ToonValleyPointerGuard.modalPauseSuppression
+    modalInteractionPreflight: window.ToonValleyPointerGuard.modalInteractionPreflight,
+    modalPauseSuppression: window.ToonValleyPointerGuard.modalPauseSuppression,
+    prompts: window.ToonValleyPointerGuard.modalPrompts
   }));
-  if (!guard.explicitResumeAfterModal || !guard.modalExitDeferred || !guard.modalPauseSuppression) throw new Error(`Pointer guard capabilities missing ${JSON.stringify(guard)}`);
+  if (!guard.explicitResumeAfterModal || !guard.modalExitDeferred || !guard.modalInteractionPreflight || !guard.modalPauseSuppression || !guard.prompts.some((p) => p.includes('Talk to'))) throw new Error(`Pointer guard capabilities missing ${JSON.stringify(guard)}`);
 
   const npcTarget = await page.evaluate(() => {
     const TV = window.ToonValley;
@@ -101,33 +104,16 @@ try {
   await page.waitForFunction((prompt) => document.getElementById('interaction-prompt')?.textContent.includes(prompt), npcTarget.prompt, { timeout: 6000 });
   checkpoint(`real prompt ready: ${npcTarget.prompt}`);
 
-  // Invoke the already-resolved world interaction from a normal browser click
-  // event, not Runtime.evaluate. This mirrors the user gesture call stack and also
-  // proves the action returns after modal construction rather than wedging the page.
-  await page.evaluate(() => {
-    const selected = window.ToonValley.state.nearestInteractable;
-    if (!selected || typeof selected.action !== 'function') throw new Error('No selected world interaction action');
-    const trigger = document.createElement('button');
-    trigger.id = 'tv-modal-test-trigger';
-    trigger.textContent = 'OPEN INTERACTION';
-    trigger.style.cssText = 'position:fixed;left:8px;top:8px;z-index:2147483647;width:160px;height:44px';
-    trigger.addEventListener('click', () => {
-      selected.action();
-      trigger.dataset.returned = 'true';
-    });
-    document.body.appendChild(trigger);
-  });
-  await page.mouse.click(40, 28);
-  await page.waitForSelector('.life-overlay', { timeout: 6000 });
-  const actionReturned = await page.getAttribute('#tv-modal-test-trigger', 'data-returned');
-  if (actionReturned !== 'true') throw new Error('NPC action did not return after modal construction');
-  checkpoint('NPC action returned after constructing popover');
+  // This is the reported production path: E while Pointer Lock is active. The
+  // preflight must consume only this modal-producing interaction, release the lock,
+  // then run Maya's action after unlock so popover construction cannot re-enter the
+  // Pointer Lock/pause stack.
+  await page.keyboard.press('KeyE');
   await requireReleasedForModal(npcTarget.prompt);
-  checkpoint('NPC popover opened without pause overlay');
+  checkpoint('real E opened NPC popover after safe unlock');
   await closeResumeAndRequireGameplay(npcTarget.prompt);
 
   await page.evaluate(() => {
-    document.getElementById('tv-modal-test-trigger')?.remove();
     const TV = window.ToonValley;
     TV.player.position.set(0, TV.terrainHeight(0, 10), 10);
     TV.playerVelocity.set(0, 0, 0);
@@ -141,6 +127,8 @@ try {
   if (Math.hypot(after.x - before.x, after.z - before.z) < 0.35) throw new Error(`Gameplay did not resume after NPC popover ${JSON.stringify({ before, after })}`);
   checkpoint('WASD movement resumed');
 
+  // ToonPhone already has its own pre-release path. Verify it can replace tabs and
+  // close into the same explicit Resume lifecycle without overlapping Pause.
   await page.evaluate(() => window.ToonValleyUILayerFix.openTab('tasks'));
   await requireReleasedForModal('ToonPhone Tasks');
   checkpoint('ToonPhone opened through desktop UI layer');
