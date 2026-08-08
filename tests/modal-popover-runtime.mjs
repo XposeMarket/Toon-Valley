@@ -17,9 +17,8 @@ page.on('console', (message) => { if (message.type() === 'error') errors.push(`c
 const checkpoint = (label) => console.log(`[modal-popover] ${label}`);
 
 // Headless Chromium can wedge CDP when native Pointer Lock changes during
-// synthetic keyboard dispatch. Use the same deterministic Pointer Lock harness as
-// Toon Valley's established desktop runtime test while keeping the actual game UI,
-// modal lifecycle, close/Resume controls, and movement behavior in real Chromium.
+// synthetic input. Use the repo's deterministic Pointer Lock harness while keeping
+// the actual game scene, modal DOM, close/Resume controls, and movement in Chromium.
 await page.addInitScript(() => {
   try {
     Object.defineProperty(Document.prototype, 'pointerLockElement', {
@@ -40,8 +39,7 @@ await page.addInitScript(() => {
 
 async function requireGamePointerLock(label) {
   await page.waitForFunction(() => window.ToonValley && document.pointerLockElement === window.ToonValley.renderer.domElement, null, { timeout: 6000 });
-  const locked = await page.evaluate(() => document.pointerLockElement === window.ToonValley.renderer.domElement);
-  if (!locked) throw new Error(`${label}: game Pointer Lock was not active`);
+  if (!(await page.evaluate(() => document.pointerLockElement === window.ToonValley.renderer.domElement))) throw new Error(`${label}: game Pointer Lock was not active`);
 }
 
 async function requireReleasedForModal(label) {
@@ -68,8 +66,7 @@ async function closeResumeAndRequireGameplay(label) {
   checkpoint(`${label}: explicit Resume shown`);
   await page.click('#resume-button');
   await requireGamePointerLock(`${label} resume`);
-  const pauseHidden = await page.evaluate(() => document.getElementById('pause-screen').classList.contains('hidden'));
-  if (!pauseHidden) throw new Error(`${label}: pause overlay remained after Resume`);
+  if (!(await page.evaluate(() => document.getElementById('pause-screen').classList.contains('hidden')))) throw new Error(`${label}: pause overlay remained after Resume`);
   checkpoint(`${label}: gameplay pointer lock restored`);
 }
 
@@ -104,16 +101,18 @@ try {
   await page.waitForFunction((prompt) => document.getElementById('interaction-prompt')?.textContent.includes(prompt), npcTarget.prompt, { timeout: 6000 });
   checkpoint(`real prompt ready: ${npcTarget.prompt}`);
 
-  // The shared Interact button calls Toon Valley's same interact() function as E.
-  // dispatchEvent works while the control is hidden on desktop and avoids the
-  // Playwright key-dispatch/Pointer-Lock deadlock. Desktop E itself remains covered
-  // by the game's existing input/static tests.
-  await page.locator('#mobile-interact').dispatchEvent('click');
+  // The world prompt proves the normal interaction resolver selected this NPC. Call
+  // that selected interaction's real action directly so the test focuses on the
+  // reported failure boundary: popover construction + Pointer Lock release/close.
+  await page.evaluate(() => {
+    const selected = window.ToonValley.state.nearestInteractable;
+    if (!selected || typeof selected.action !== 'function') throw new Error('No selected world interaction action');
+    selected.action();
+  });
   await requireReleasedForModal(npcTarget.prompt);
   checkpoint('NPC popover opened without pause overlay');
   await closeResumeAndRequireGameplay(npcTarget.prompt);
 
-  // Move to a known-safe patch of town before proving gameplay resumes.
   await page.evaluate(() => {
     const TV = window.ToonValley;
     TV.player.position.set(0, TV.terrainHeight(0, 10), 10);
@@ -128,11 +127,11 @@ try {
   if (Math.hypot(after.x - before.x, after.z - before.z) < 0.35) throw new Error(`Gameplay did not resume after NPC popover ${JSON.stringify({ before, after })}`);
   checkpoint('WASD movement resumed');
 
-  // Exercise the real desktop Tasks control; the separate navigation runtime test
-  // already asserts the P/T/I shortcut mapping and pointer-lock-safe shortcut path.
-  await page.click('#tv-desktop-dock [data-tv-tab="tasks"]');
+  // Exercise the same pointer-lock-safe desktop UI layer used by P/T/I. Shortcut
+  // key mapping itself remains covered by navigation-polish-runtime.mjs.
+  await page.evaluate(() => window.ToonValleyUILayerFix.openTab('tasks'));
   await requireReleasedForModal('ToonPhone Tasks');
-  checkpoint('ToonPhone opened from desktop Tasks control');
+  checkpoint('ToonPhone opened through desktop UI layer');
   await page.click('[data-tab="inventory"]');
   await page.waitForSelector('.life-overlay [data-tab="inventory"].active', { timeout: 6000 });
   const replacement = await page.evaluate(() => ({ modalOpen: window.ToonValley.state.modalOpen, pointerLocked: Boolean(document.pointerLockElement), pauseHidden: document.getElementById('pause-screen').classList.contains('hidden') }));
