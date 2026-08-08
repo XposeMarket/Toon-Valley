@@ -7,13 +7,14 @@ const requiredSW = [
   "const CACHE_NAME = 'toon-valley-v33'",
   'async function networkFirst(request)',
   "event.request.mode === 'navigate'",
-  'client.navigate(client.url)',
+  "client.postMessage({ type: 'TOON_VALLEY_UPDATE_READY'",
   'Promise.allSettled(CORE.map((url) => cache.add(url)))'
 ];
 for (const snippet of requiredSW) {
   if (!sw.includes(snippet)) throw new Error(`Service-worker freshness invariant missing: ${snippet}`);
 }
 if (/cached\s*\|\|\s*network/.test(sw)) throw new Error('Release-critical service-worker path regressed to cache-first');
+if (sw.includes('client.navigate(client.url)')) throw new Error('Service-worker activation must not navigate a loading client');
 
 const requiredGuard = [
   'modalPointerRestore: true',
