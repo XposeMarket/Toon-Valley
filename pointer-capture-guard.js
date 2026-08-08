@@ -23,6 +23,34 @@
     captureGuarded = true;
   }
 
+  const documentProto = globalThis.Document?.prototype;
+  const nativeExitPointerLock = documentProto?.exitPointerLock;
+  let modalExitDeferred = Boolean(nativeExitPointerLock?.__toonValleyDeferredModalExit);
+  if (documentProto && typeof nativeExitPointerLock === 'function' && !modalExitDeferred) {
+    function guardedExitPointerLock() {
+      // life.js builds the dialog and marks modalOpen before asking Pointer Lock to
+      // exit. Let that interaction/action stack return first; firing
+      // pointerlockchange synchronously while the popover is still being assembled
+      // can re-enter game/pause UI code and wedge Chromium/WebKit.
+      if (window.ToonValley?.state?.modalOpen) {
+        const doc = this;
+        setTimeout(() => {
+          if (!window.ToonValley?.state?.modalOpen || !doc.pointerLockElement) return;
+          try {
+            nativeExitPointerLock.call(doc);
+          } catch (error) {
+            console.warn('Deferred modal Pointer Lock release failed', error);
+          }
+        }, 0);
+        return undefined;
+      }
+      return nativeExitPointerLock.call(this);
+    }
+    guardedExitPointerLock.__toonValleyDeferredModalExit = true;
+    documentProto.exitPointerLock = guardedExitPointerLock;
+    modalExitDeferred = true;
+  }
+
   const modalSelector = '.life-overlay,.mb-overlay,.ohx,#build-controls,#ohbuild,#bl-controls';
   let resumeAfterModal = false;
 
@@ -42,16 +70,15 @@
     if (!resumeAfterModal || TV?.DEVICE?.touch || !TV?.state?.started) return;
     if (TV.state.modalOpen || modalUIVisible() || gamePointerLocked()) return;
     // Re-requesting Pointer Lock from the same click that closes a DOM dialog is
-    // browser-sensitive and can wedge Chromium/WebKit. The stable flow is explicit:
-    // release for the dialog, suppress Pause while the dialog exists, then expose
-    // the normal Resume control once the final dialog is gone.
+    // browser-sensitive. Expose the normal Resume control instead so the next
+    // explicit player gesture reacquires Pointer Lock reliably.
     document.getElementById('pause-screen')?.classList.remove('hidden');
     resumeAfterModal = false;
   }
 
-  // Core game listener runs first and may briefly reveal Pause on unlock. This
-  // listener corrects that state without cancelling pointerlockchange for any of
-  // the other input/UI modules.
+  // The core game listener may briefly reveal Pause on unlock. Correct that state
+  // after the deferred exit without cancelling pointerlockchange for any other
+  // input/UI modules.
   document.addEventListener('pointerlockchange', () => {
     if (!TV || TV.DEVICE.touch) return;
     if (gamePointerLocked()) {
@@ -81,9 +108,9 @@
   window.ToonValleyPointerGuard = Object.freeze({
     active: captureGuarded,
     pointerCapture: captureGuarded,
+    modalExitDeferred,
     modalPauseSuppression: true,
     explicitResumeAfterModal: true,
-    nativeExitPointerLock: true,
     resumePending: () => resumeAfterModal
   });
   console.info('Toon Valley pointer/input guard ready', window.ToonValleyPointerGuard);
