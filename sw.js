@@ -55,15 +55,12 @@ self.addEventListener('activate', (event) => {
     await Promise.all(oldReleaseCaches.map((key) => caches.delete(key)));
     await self.clients.claim();
 
-    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    for (const client of windows) client.postMessage({ type: 'TOON_VALLEY_UPDATE_READY', cache: CACHE_NAME });
-
     // Only an actual upgrade from an older Toon Valley worker gets a forced
-    // navigation. Fresh installs never navigate during activation, which avoids
-    // the mobile startup deadlock caught by CI. Existing v32 clients are different:
-    // their already-executing page cannot contain the new update listener yet, so
-    // reload them once after the new worker has claimed control.
+    // navigation. Fresh installs remain passive during activation. Existing v32
+    // windows are already executing stale JavaScript, so after the new worker has
+    // claimed them, navigate those windows once to load the current release.
     if (hadPriorRelease) {
+      const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
       await Promise.allSettled(windows.map((client) => client.navigate(client.url)));
     }
   })());
