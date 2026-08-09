@@ -15,7 +15,10 @@ if (/interaction\.action\s*=/.test(dispatchSource)) throw new Error('Modal safet
 if (/style\.display\s*=\s*['"]none['"]/.test(dispatchSource)) throw new Error('Modal safety must never display:none the WebGL surface');
 if (!/transientRenderQuiesce:\s*true/.test(dispatchSource) || !/preUnlockRenderQuiesce:\s*true/.test(dispatchSource) || !/transientCanvasDetach:\s*true/.test(dispatchSource)) throw new Error('Pointer Lock release transition hardening is incomplete');
 
-const browser = await chromium.launch({ headless: !headedPointerLock, args: ['--use-gl=swiftshader', '--enable-webgl'] });
+const launchOptions = headedPointerLock
+  ? { headless: false, channel: 'chrome', args: ['--enable-webgl'] }
+  : { headless: true, args: ['--use-gl=swiftshader', '--enable-webgl'] };
+const browser = await chromium.launch(launchOptions);
 const page = await browser.newPage({ viewport: { width: 1280, height: 760 } });
 page.setDefaultTimeout(10000);
 page.setDefaultNavigationTimeout(45000);
@@ -120,7 +123,7 @@ try {
   await move('furnitureStore', 'Browse furniture catalog'); await lock('furniture'); await cycle('furniture');
   await move('generalStore', 'Browse counter'); await lock('store'); await cycle('store');
   if (errors.length) throw new Error(errors.join('\n'));
-  console.log('Toon Valley modal/popover lifecycle passed', { headedPointerLock, final: await state() });
+  console.log('Toon Valley modal/popover lifecycle passed', { headedPointerLock, browserChannel: headedPointerLock ? 'chrome' : 'chromium', final: await state() });
 } finally {
   await browser.close();
   server?.kill('SIGTERM');
