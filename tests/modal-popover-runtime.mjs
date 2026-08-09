@@ -34,7 +34,6 @@ async function diagnostics() {
     area: window.ToonValley?.state?.area,
     modalVisible: window.ToonValleyPointerGuard?.modalVisible?.(),
     resumePending: window.ToonValleyPointerGuard?.resumePending?.(),
-    modalExitPending: window.ToonValleyPointerGuard?.modalExitPending?.(),
     suppressedUnlocks: window.ToonValleyPointerGuard?.suppressedModalUnlocks?.(),
     dispatcher: window.ToonValleyInteractionKeyupDispatch ? {
       pending: window.ToonValleyInteractionKeyupDispatch.pending(),
@@ -66,13 +65,13 @@ async function openNearestWithE(label) {
   } catch (error) {
     const failed = await diagnostics();
     console.log(`[modal-popover] ${label} dispatch timeout`, failed);
-    throw new Error(`${label}: deferred dispatch did not complete within 3s ${JSON.stringify(failed)}\n${error.message}`);
+    throw new Error(`${label}: keyup dispatch did not complete within 3s ${JSON.stringify(failed)}\n${error.message}`);
   }
   await page.waitForFunction(() => !document.pointerLockElement && window.ToonValley.state.modalOpen === true, null, { timeout: 6000 });
   const state = await diagnostics();
   console.log(`[modal-popover] ${label} opened`, state);
   if (!state.dispatcher || state.dispatcher.arms < 1 || state.dispatcher.keyups < 1 || state.dispatcher.dispatches <= beforeDispatch || state.dispatcher.lastError || state.dispatcher.lastDrop) {
-    throw new Error(`${label}: deferred dispatch regression ${JSON.stringify(state)}`);
+    throw new Error(`${label}: keyup dispatch regression ${JSON.stringify(state)}`);
   }
   if (!state.modalOpen || !state.overlay || !state.pauseHidden || state.pointerLocked || !state.modalVisible || !state.resumePending || state.suppressedUnlocks < 1) {
     throw new Error(`${label}: modal Pointer Lock regression ${JSON.stringify(state)}`);
@@ -115,11 +114,11 @@ try {
     modalPauseSuppression: window.ToonValleyPointerGuard.modalPauseSuppression,
     consumesModalPointerLockChange: window.ToonValleyPointerGuard.consumesModalPointerLockChange,
     modalFirstLifecycle: window.ToonValleyPointerGuard.modalFirstLifecycle,
-    deferredPointerLockExit: window.ToonValleyPointerGuard.deferredPointerLockExit,
-    modalFirstDispatch: window.ToonValleyInteractionKeyupDispatch.modalFirstDispatch,
-    keyupDispatch: window.ToonValleyInteractionKeyupDispatch.executesAfterKeyup
+    nativeModalExit: window.ToonValleyPointerGuard.nativeModalExit,
+    executesOnKeyup: window.ToonValleyInteractionKeyupDispatch.executesOnKeyup,
+    dispatcherNativeExit: window.ToonValleyInteractionKeyupDispatch.nativeModalExit
   }));
-  if (!guard.explicitResumeAfterModal || !guard.modalPauseSuppression || !guard.consumesModalPointerLockChange || !guard.modalFirstLifecycle || !guard.deferredPointerLockExit || !guard.modalFirstDispatch || !guard.keyupDispatch) throw new Error(`Pointer/input capabilities missing ${JSON.stringify(guard)}`);
+  if (!guard.explicitResumeAfterModal || !guard.modalPauseSuppression || !guard.consumesModalPointerLockChange || !guard.modalFirstLifecycle || !guard.nativeModalExit || !guard.executesOnKeyup || !guard.dispatcherNativeExit) throw new Error(`Pointer/input capabilities missing ${JSON.stringify(guard)}`);
 
   const homeTarget = await moveToInteraction('home', 'Open decorating menu');
   await page.waitForFunction((prompt) => window.ToonValley.state.nearestInteractable?.prompt === prompt, homeTarget.prompt, { timeout: 6000 });
@@ -150,7 +149,7 @@ try {
   checkpoint('ToonPhone replacement stable');
 
   if (errors.length) throw new Error(errors.join('\n'));
-  console.log(`Toon Valley modal/popover lifecycle passed with modal-first construction, deferred Pointer Lock release, real keydown/keyup, and pause suppression: ${remoteURL || 'localhost'}`, { headed, homeTarget, shopTarget, guard });
+  console.log(`Toon Valley modal/popover lifecycle passed with direct KeyE keyup dispatch, native Pointer Lock release, and pause suppression: ${remoteURL || 'localhost'}`, { headed, homeTarget, shopTarget, guard });
 } finally {
   await browser.close();
   server?.kill('SIGTERM');
