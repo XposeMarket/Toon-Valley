@@ -8,6 +8,7 @@
   let pendingInteraction = null;
   let pendingSince = 0;
   let releaseScheduled = false;
+  let releaseFallback = 0;
   let unlockCount = 0;
   let physicalRelockCount = 0;
   let uiOpenCount = 0;
@@ -26,6 +27,8 @@
     pendingInteraction = null;
     pendingSince = 0;
     releaseScheduled = false;
+    if (releaseFallback) clearTimeout(releaseFallback);
+    releaseFallback = 0;
   }
 
   function relockPhysicalInteraction() {
@@ -67,7 +70,7 @@
     if (!pendingInteraction) return;
     hidePause();
     if (executePending()) return;
-    if (performance.now() - pendingSince > 1400) {
+    if (performance.now() - pendingSince > 1800) {
       const prompt = pendingInteraction.prompt || 'interaction';
       clearPending();
       lastError = `Pointer Lock did not release for ${prompt}`;
@@ -92,6 +95,12 @@
     setTimeout(flushPending, 0);
   }
 
+  function scheduleRelease() {
+    if (!pendingInteraction || releaseScheduled) return;
+    releaseScheduled = true;
+    setTimeout(releasePointerLockAfterInput, 0);
+  }
+
   function beginPreflight(interaction) {
     if (pendingInteraction || !interaction || typeof interaction.action !== 'function') return false;
     pendingInteraction = interaction;
@@ -99,15 +108,10 @@
     unlockCount++;
     hidePause();
 
-    // Never transition Pointer Lock from inside the active KeyE dispatch. Chromium,
-    // synthetic browser input and some desktop browsers can re-enter input handling
-    // when exitPointerLock() fires pointerlockchange synchronously, which previously
-    // left popover interactions hung or looking like a game crash. Complete the key
-    // event first, then release the mouse on the next task before running the action.
-    if (!releaseScheduled) {
-      releaseScheduled = true;
-      setTimeout(releasePointerLockAfterInput, 0);
-    }
+    // Capture KeyE now, but do not mutate Pointer Lock between keydown and keyup.
+    // Releasing the lock mid-press can strand Chromium/desktop input dispatch and
+    // was the source of popover hangs that looked like a full game crash.
+    releaseFallback = setTimeout(scheduleRelease, 250);
     return true;
   }
 
@@ -127,9 +131,19 @@
     event.stopImmediatePropagation();
   }, true);
 
+  document.addEventListener('keyup', (event) => {
+    if (event.code !== 'KeyE' || !pendingInteraction) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (releaseFallback) clearTimeout(releaseFallback);
+    releaseFallback = 0;
+    scheduleRelease();
+  }, true);
+
   window.ToonValleyInteractionInputPreflight = Object.freeze({
     active: true,
     deferredPointerRelease: true,
+    keyupBoundRelease: true,
     interact,
     pending: () => Boolean(pendingInteraction),
     unlockCount: () => unlockCount,
