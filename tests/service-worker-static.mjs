@@ -3,6 +3,7 @@ import fs from 'node:fs';
 const sw = fs.readFileSync('sw.js', 'utf8');
 const guard = fs.readFileSync('pointer-capture-guard.js', 'utf8');
 const life = fs.readFileSync('life.js', 'utf8');
+const game = fs.readFileSync('game.js', 'utf8');
 
 const requiredSW = [
   "const CACHE_NAME = 'toon-valley-v33'",
@@ -40,5 +41,7 @@ if (guard.includes('requestPointerLock') || guard.includes('Document.prototype.e
 const modalStateIndex = life.indexOf('TV.setModalOpen(true)');
 const modalExitIndex = life.indexOf('document.exitPointerLock()', modalStateIndex);
 if (modalStateIndex < 0 || modalExitIndex < modalStateIndex) throw new Error('Life modal must mark modalOpen before releasing Pointer Lock');
+if (!game.includes("if (event.code === 'KeyE' && !event.repeat) interact();")) throw new Error('Desktop E key must continue routing directly to interact()');
+if (!game.includes('if (nearest.action) nearest.action();')) throw new Error('interact() must continue executing the nearest interaction action directly');
 
-console.log('Toon Valley service-worker stale-upgrade and native modal lifecycle invariants passed.');
+console.log('Toon Valley service-worker stale-upgrade, native E route, and modal lifecycle invariants passed.');
