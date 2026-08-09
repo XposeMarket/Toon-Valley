@@ -4,29 +4,17 @@
   const TV = window.ToonValley;
   if (!TV) return;
 
-  let armedInteraction = null;
   let pendingTimer = 0;
   let pendingUnlock = null;
-  let arms = 0;
-  let keyups = 0;
+  let schedules = 0;
   let attempts = 0;
   let dispatches = 0;
-  let blurs = 0;
+  let wrappedCount = 0;
   let lastPrompt = null;
   let lastError = null;
   let lastDrop = null;
+  const wrapped = new WeakMap();
 
-  const eligible = () => !TV.DEVICE.touch && TV.state.started && !TV.state.modalOpen;
-  const currentInteraction = () => {
-    const item = TV.state.nearestInteractable;
-    if (!item || item.area !== TV.state.area || typeof item.action !== 'function') return null;
-    if (item.enabled && !item.enabled()) return null;
-    return item;
-  };
-
-  // Only intercept interactions known to open mouse-driven UI. Physical actions,
-  // seats, quest steps, fishing, pets, etc. remain on the core KeyE path so the
-  // shared interaction-experience gesture queue keeps its original behavior.
   const opensModalUI = (interaction) => {
     const prompt = interaction?.prompt || '';
     return prompt === 'Browse counter' ||
@@ -40,35 +28,42 @@
       /^Talk to /.test(prompt);
   };
 
-  function stillValid(interaction) {
-    if (!eligible()) { lastDrop = 'dispatch-not-eligible'; return false; }
-    if (interaction.area !== TV.state.area) { lastDrop = 'dispatch-area-changed'; return false; }
-    if (interaction.enabled && !interaction.enabled()) { lastDrop = 'dispatch-disabled'; return false; }
-    return true;
-  }
+  const canDefer = (interaction) => !TV.DEVICE.touch &&
+    TV.state.started &&
+    !TV.state.modalOpen &&
+    interaction?.area === TV.state.area &&
+    (!interaction.enabled || interaction.enabled());
 
-  function execute(interaction) {
+  function execute(interaction, original, args) {
     pendingTimer = 0;
     pendingUnlock = null;
     attempts++;
-    if (!stillValid(interaction)) return;
+    if (!canDefer(interaction)) {
+      lastDrop = 'dispatch-no-longer-valid';
+      return;
+    }
     dispatches++;
     lastPrompt = interaction.prompt || 'Interact';
     lastError = null;
     lastDrop = null;
     try {
-      interaction.action();
+      original.apply(interaction, args);
     } catch (error) {
       lastError = String(error?.stack || error?.message || error);
       console.error('Toon Valley deferred interaction failed', error);
     }
   }
 
-  function beginPointerUnlock(interaction) {
+  function beginPointerUnlock(interaction, original, args) {
     pendingTimer = 0;
-    if (!stillValid(interaction)) { pendingUnlock = null; return; }
+    if (!canDefer(interaction)) {
+      pendingUnlock = null;
+      lastDrop = 'unlock-no-longer-valid';
+      return;
+    }
+
     if (document.pointerLockElement !== TV.renderer?.domElement) {
-      pendingTimer = setTimeout(() => execute(interaction), 0);
+      pendingTimer = setTimeout(() => execute(interaction, original, args), 0);
       return;
     }
 
@@ -82,7 +77,7 @@
       finished = true;
       document.removeEventListener('pointerlockchange', onChange);
       clearTimeout(pendingTimer);
-      pendingTimer = setTimeout(() => execute(interaction), 0);
+      pendingTimer = setTimeout(() => execute(interaction, original, args), 0);
     };
     const onChange = () => {
       if (document.pointerLockElement !== TV.renderer?.domElement) finish();
@@ -99,64 +94,73 @@
     }
   }
 
-  function queueModalInteraction(interaction) {
+  function schedule(interaction, original, args) {
     clearTimeout(pendingTimer);
+    schedules++;
     pendingUnlock = interaction;
-    // Crucially, do not call exitPointerLock from inside keydown/keyup. Let the
-    // browser finish the complete E input event stack first; then release Pointer
-    // Lock in a fresh task and only construct UI after the unlock transition ends.
-    pendingTimer = setTimeout(() => beginPointerUnlock(interaction), 0);
-  }
-
-  document.addEventListener('keydown', (event) => {
-    if (event.code !== 'KeyE' || event.repeat || !eligible()) return;
-    const interaction = currentInteraction();
-    if (!interaction) { lastDrop = 'keydown-no-current-interaction'; return; }
-    if (!opensModalUI(interaction)) return;
-    armedInteraction = interaction;
-    arms++;
     lastPrompt = interaction.prompt || 'Interact';
     lastDrop = null;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-  }, true);
+    // The core game remains the only owner of KeyE. Its normal interaction action
+    // calls this wrapper, which returns immediately. Pointer Lock is released from
+    // a fresh task after the keyboard event stack has completely unwound, and the
+    // original UI action runs only after the unlock transition has completed.
+    pendingTimer = setTimeout(() => beginPointerUnlock(interaction, original, args), 0);
+  }
 
-  document.addEventListener('keyup', (event) => {
-    if (event.code !== 'KeyE' || !armedInteraction) return;
-    keyups++;
-    const interaction = armedInteraction;
-    armedInteraction = null;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    queueModalInteraction(interaction);
-  }, true);
+  function wrapInteraction(interaction) {
+    if (!interaction || !opensModalUI(interaction) || typeof interaction.action !== 'function') return false;
+    if (wrapped.get(interaction) === interaction.action) return false;
+    const original = interaction.action;
+    if (original.__toonValleyModalSafeWrapper) return false;
 
-  // Losing focus can accompany Pointer Lock release. An unfinished keydown can be
-  // abandoned; once keyup has queued a UI interaction, its unlock/dispatch path is
-  // intentionally preserved rather than silently cancelled.
-  window.addEventListener('blur', () => {
-    blurs++;
-    armedInteraction = null;
+    function modalSafeAction(...args) {
+      if (!canDefer(interaction) || document.pointerLockElement !== TV.renderer?.domElement) {
+        return original.apply(interaction, args);
+      }
+      schedule(interaction, original, args);
+      return undefined;
+    }
+    modalSafeAction.__toonValleyModalSafeWrapper = true;
+    modalSafeAction.__toonValleyOriginalAction = original;
+    interaction.action = modalSafeAction;
+    wrapped.set(interaction, modalSafeAction);
+    wrappedCount++;
+    return true;
+  }
+
+  function scan() {
+    for (const interaction of TV.interactables) wrapInteraction(interaction);
+  }
+
+  scan();
+  let scanClock = 0;
+  TV.registerUpdateHook((dt) => {
+    scanClock += dt;
+    if (scanClock < 1) return;
+    scanClock = 0;
+    scan();
   });
 
   window.ToonValleyDeferredInteractionDispatch = Object.freeze({
     active: true,
+    singleCoreKeyHandler: true,
+    actionWrapperArchitecture: true,
     executesAfterKeyboardEvent: true,
     releasesPointerLockBeforeUI: true,
     releasesPointerLockAfterKeyEvent: true,
     preservesInteractionActions: true,
     preservesPhysicalActionPath: true,
     queuedActionsSurviveBlur: true,
-    pending: () => Boolean(armedInteraction || pendingTimer || pendingUnlock),
-    armCount: () => arms,
-    keyupCount: () => keyups,
+    pending: () => Boolean(pendingTimer || pendingUnlock),
+    wrappedCount: () => wrappedCount,
+    scheduleCount: () => schedules,
     attemptCount: () => attempts,
     dispatchCount: () => dispatches,
-    blurCount: () => blurs,
     lastPrompt: () => lastPrompt,
     lastError: () => lastError,
-    lastDrop: () => lastDrop
+    lastDrop: () => lastDrop,
+    scan
   });
 
-  console.info('Toon Valley deferred modal interaction dispatcher ready');
+  console.info('Toon Valley modal-safe interaction actions ready', { wrapped: wrappedCount });
 })();
