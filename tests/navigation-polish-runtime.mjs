@@ -7,8 +7,8 @@ const browser=await chromium.launch({headless:true,args:['--use-gl=swiftshader',
 await page.addInitScript(()=>{
  try{
   Object.defineProperty(Document.prototype,'pointerLockElement',{configurable:true,get(){return this.__tvTestPointerLock||null;}});
-  Element.prototype.requestPointerLock=function(){document.__tvTestPointerLock=this;document.dispatchEvent(new Event('pointerlockchange'));return Promise.resolve();};
-  Document.prototype.exitPointerLock=function(){this.__tvTestPointerLock=null;document.dispatchEvent(new Event('pointerlockchange'));};
+  Element.prototype.requestPointerLock=function(){document.__tvTestPointerLock=this;setTimeout(()=>document.dispatchEvent(new Event('pointerlockchange')),0);return Promise.resolve();};
+  Document.prototype.exitPointerLock=function(){this.__tvTestPointerLock=null;setTimeout(()=>document.dispatchEvent(new Event('pointerlockchange')),0);};
  }catch{}
 });
 try{
@@ -35,8 +35,6 @@ try{
  if(!state.dock||state.shortcuts.phone!=='P'||state.shortcuts.tasks!=='T'||state.shortcuts.inventory!=='I'||!state.pointerLockSafe||!state.hasOpenPhone||!state.pointerBefore)throw new Error(`Desktop life controls missing ${JSON.stringify(state)}`);
  if(!state.dispatcher.keyup||!state.dispatcher.modalHandoff||!state.dispatcher.preservesPhysical)throw new Error(`Desktop interaction dispatcher missing ${JSON.stringify(state.dispatcher)}`);
 
- // Real integrated popover regression: open ToonPhone with P while gameplay owns
- // Pointer Lock, require lock release + usable modal, then close cleanly without a crash.
  await page.keyboard.press('KeyP');
  await page.waitForFunction(()=>window.ToonValley.state.modalOpen&&Boolean(document.querySelector('.life-overlay')),null,{timeout:8000});
  const popover=await page.evaluate(()=>({
