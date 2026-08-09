@@ -21,8 +21,32 @@ async function requireGamePointerLock(label) {
   if (!(await page.evaluate(() => document.pointerLockElement === window.ToonValley.renderer.domElement))) throw new Error(`${label}: game Pointer Lock was not active`);
 }
 
+async function modalDiagnostics() {
+  return page.evaluate(() => ({
+    pointerLocked: Boolean(document.pointerLockElement),
+    gamePointerLocked: document.pointerLockElement === window.ToonValley?.renderer?.domElement,
+    modalOpen: window.ToonValley?.state?.modalOpen,
+    overlay: Boolean(document.querySelector('.life-overlay')),
+    pauseHidden: document.getElementById('pause-screen')?.classList.contains('hidden'),
+    nearest: window.ToonValley?.state?.nearestInteractable?.prompt || null,
+    area: window.ToonValley?.state?.area,
+    pending: window.ToonValleyInteractionInputPreflight?.pending?.(),
+    unlocks: window.ToonValleyInteractionInputPreflight?.unlockCount?.(),
+    ui: window.ToonValleyInteractionInputPreflight?.uiOpenCount?.(),
+    lastPrompt: window.ToonValleyInteractionInputPreflight?.lastPrompt?.(),
+    lastError: window.ToonValleyInteractionInputPreflight?.lastError?.(),
+    guardVisible: window.ToonValleyPointerGuard?.modalVisible?.(),
+    resumePending: window.ToonValleyPointerGuard?.resumePending?.()
+  }));
+}
+
 async function requireReleasedForModal(label) {
-  await page.waitForSelector('.life-overlay', { timeout: 6000 });
+  try {
+    await page.waitForSelector('.life-overlay', { timeout: 6000 });
+  } catch (error) {
+    console.error(`[modal-popover] ${label} failed to open`, await modalDiagnostics());
+    throw error;
+  }
   await page.waitForFunction(() => !document.pointerLockElement && window.ToonValley.state.modalOpen === true, null, { timeout: 6000 });
   const state = await page.evaluate(() => ({
     modalOpen: window.ToonValley.state.modalOpen,
