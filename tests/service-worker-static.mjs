@@ -24,22 +24,23 @@ if (guardIndex < 0 || navigateIndex < guardIndex) throw new Error('Stale-client 
 const requiredGuard = [
   'explicitResumeAfterModal: true',
   'modalPauseSuppression: true',
-  'modalInteractionPreflight: true',
-  'preflightModalInteraction',
-  'pendingInteraction',
-  'runPendingInteraction',
-  "event.code !== 'KeyE'",
-  '/^Talk to /',
   'modalExitDeferred',
   '__toonValleyDeferredModalExit',
-  'showResumeAfterFinalModal'
+  'revealResumeAfterModal',
+  "document.addEventListener('pointerlockchange'",
+  'event.stopImmediatePropagation()',
+  'new MutationObserver',
+  'modalVisible: modalUIVisible',
+  'resumePending: () => resumeAfterModal'
 ];
 for (const snippet of requiredGuard) {
   if (!guard.includes(snippet)) throw new Error(`Popover input invariant missing: ${snippet}`);
 }
+if (guard.includes('preflightModalInteraction') || guard.includes('pendingInteraction') || guard.includes("event.code !== 'KeyE'")) {
+  throw new Error('Popover guard must not intercept or replay core physical/UI interaction input');
+}
 if (guard.includes('requestPointerLock')) throw new Error('Popover close path must not request Pointer Lock from the closing dialog event');
-if (guard.includes('stopImmediatePropagation')) throw new Error('Popover guard must not globally suppress other input listeners');
-if (!guard.includes("if (window.ToonValley?.state?.modalOpen)")) throw new Error('Fallback deferred Pointer Lock exit must be scoped to active modal UI');
-if (!guard.includes("window.addEventListener('keydown', preflightModalInteraction, true)")) throw new Error('Modal E preflight must run before the core document interaction handler');
+if (!guard.includes("if (window.ToonValley?.state?.modalOpen)")) throw new Error('Deferred Pointer Lock exit must be scoped to active modal UI');
+if (!guard.includes("if (TV.state.modalOpen || modalUIVisible())")) throw new Error('Pause suppression must be scoped to visible/active modal UI');
 
-console.log('Toon Valley service-worker stale-upgrade and popover preflight invariants passed.');
+console.log('Toon Valley service-worker stale-upgrade and shared modal lifecycle invariants passed.');
