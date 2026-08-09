@@ -22,16 +22,30 @@ await page.addInitScript(() => {
       configurable: true,
       get() { return this.__tvTestPointerLock || null; }
     });
-    Element.prototype.requestPointerLock = function requestPointerLock() {
-      document.__tvTestPointerLock = this;
-      document.dispatchEvent(new Event('pointerlockchange'));
-      return Promise.resolve();
+    Object.defineProperty(Element.prototype, 'requestPointerLock', {
+      configurable: true,
+      writable: true,
+      value: function requestPointerLock() {
+        document.__tvTestPointerLock = this;
+        document.dispatchEvent(new Event('pointerlockchange'));
+        return Promise.resolve();
+      }
+    });
+    Object.defineProperty(Document.prototype, 'exitPointerLock', {
+      configurable: true,
+      writable: true,
+      value: function exitPointerLock() {
+        this.__tvTestPointerLock = null;
+        this.dispatchEvent(new Event('pointerlockchange'));
+      }
+    });
+    window.__tvPointerHarness = {
+      requestOverridden: String(Element.prototype.requestPointerLock).includes('__tvTestPointerLock'),
+      exitOverridden: String(Document.prototype.exitPointerLock).includes('__tvTestPointerLock')
     };
-    Document.prototype.exitPointerLock = function exitPointerLock() {
-      document.__tvTestPointerLock = null;
-      document.dispatchEvent(new Event('pointerlockchange'));
-    };
-  } catch (_) {}
+  } catch (error) {
+    window.__tvPointerHarness = { error: String(error?.stack || error) };
+  }
 });
 
 async function requireGamePointerLock(label) {
@@ -76,6 +90,8 @@ async function closeResumeAndRequireGameplay(label) {
 try {
   await page.goto(remoteURL || 'http://127.0.0.1:4173', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.ToonValley && window.ToonValleyLife && window.ToonValleyPointerGuard && window.ToonValleyUILayerFix, null, { timeout: 30000 });
+  const harness = await page.evaluate(() => window.__tvPointerHarness);
+  if (!harness?.requestOverridden || !harness?.exitOverridden) throw new Error(`Pointer Lock test harness failed to override browser methods: ${JSON.stringify(harness)}`);
   checkpoint('game globals ready');
   await page.click('#play-button');
   await page.waitForFunction(() => window.ToonValley.state.started === true);
@@ -150,7 +166,7 @@ try {
   await closeResumeAndRequireGameplay('ToonPhone replacement');
 
   if (errors.length) throw new Error(errors.join('\n'));
-  console.log(`Toon Valley modal/popover lifecycle passed: ${remoteURL || 'localhost'}`, { npcTarget, before, after, guard });
+  console.log(`Toon Valley modal/popover lifecycle passed: ${remoteURL || 'localhost'}`, { npcTarget, before, after, guard, harness });
 } finally {
   await browser.close();
   server?.kill('SIGTERM');
