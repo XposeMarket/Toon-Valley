@@ -91,6 +91,23 @@ try {
   if (modalTarget.area !== 'home') throw new Error(`Failed to enter home for modal test: ${JSON.stringify(modalTarget)}`);
   await page.waitForFunction((prompt) => document.getElementById('interaction-prompt')?.textContent.includes(prompt), modalTarget.prompt, { timeout: 6000 });
   if (!(await page.evaluate(() => window.ToonValleyInteractionInputPreflight.interact()))) throw new Error('Desktop interaction preflight refused the home decorating interaction');
+  await wait(300);
+  const preflightState = await page.evaluate(() => ({
+    pending: window.ToonValleyInteractionInputPreflight.pending(),
+    lastPrompt: window.ToonValleyInteractionInputPreflight.lastPrompt(),
+    lastError: window.ToonValleyInteractionInputPreflight.lastError(),
+    nearestPrompt: window.ToonValleyInteractionInputPreflight.nearestInteraction()?.prompt || null,
+    stateNearestPrompt: window.ToonValley.state.nearestInteractable?.prompt || null,
+    pointerLocked: Boolean(document.pointerLockElement),
+    modalOpen: window.ToonValley.state.modalOpen,
+    overlay: Boolean(document.querySelector('.life-overlay')),
+    pauseHidden: document.getElementById('pause-screen').classList.contains('hidden'),
+    unlocks: window.ToonValleyInteractionInputPreflight.unlockCount(),
+    ui: window.ToonValleyInteractionInputPreflight.uiOpenCount(),
+    area: window.ToonValley.state.area
+  }));
+  console.log('[modal-popover] preflight-state', JSON.stringify(preflightState));
+  if (!preflightState.overlay) throw new Error(`${modalTarget.prompt}: preflight did not open modal ${JSON.stringify(preflightState)}`);
   await requireReleasedForModal(modalTarget.prompt);
   checkpoint('home decorating popover opened after safe preflight');
   await closeResume(modalTarget.prompt);
