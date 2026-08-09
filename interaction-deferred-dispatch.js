@@ -87,28 +87,38 @@
     TV.playerVelocity?.set?.(0, 0, 0);
     TV.state.jumpVelocity = 0;
     window.ToonValleyPointerGuard?.armResumeAfterModal?.();
-
-    let finished = false;
-    const finish = () => {
-      if (finished) return;
-      finished = true;
-      document.removeEventListener('pointerlockchange', onChange);
-      clearTimeout(pendingTimer);
-      pendingTimer = setTimeout(() => execute(interaction, original, args), 0);
-    };
-    const onChange = () => {
-      if (document.pointerLockElement !== TV.renderer?.domElement) finish();
-    };
-
     pendingUnlock = interaction;
-    document.addEventListener('pointerlockchange', onChange);
-    pendingTimer = setTimeout(finish, 700);
+
+    const startedAt = performance.now();
+    const verifyUnlock = () => {
+      pendingTimer = 0;
+      if (!canDefer(interaction)) {
+        pendingUnlock = null;
+        lastDrop = 'unlock-no-longer-valid';
+        return;
+      }
+      if (document.pointerLockElement !== TV.renderer?.domElement) {
+        pendingTimer = setTimeout(() => execute(interaction, original, args), 0);
+        return;
+      }
+      if (performance.now() - startedAt >= 700) {
+        pendingUnlock = null;
+        lastDrop = 'pointer-lock-release-timeout';
+        console.warn('Toon Valley modal interaction cancelled because Pointer Lock did not release in time', interaction.prompt);
+        return;
+      }
+      pendingTimer = setTimeout(verifyUnlock, 16);
+    };
+
     try {
       document.exitPointerLock?.();
     } catch (error) {
       console.warn('Pointer Lock release before modal interaction failed', error);
-      finish();
     }
+    // Do not depend on pointerlockchange ordering. Browsers and emulated CI streams
+    // can deliver that event at different points; confirm the observable lock state
+    // on the next task and keep polling briefly until it is actually released.
+    pendingTimer = setTimeout(verifyUnlock, 0);
   }
 
   function schedule(interaction, original, args) {
@@ -125,8 +135,6 @@
 
     if (installed.has(interaction)) {
       if (interaction.action === wrapped.get(interaction)) return false;
-      // A later system replaced the action. Preserve that replacement as the new
-      // original, but never stack one modal-safe wrapper around another.
       installed.delete(interaction);
     }
 
@@ -180,6 +188,7 @@
     preservesPhysicalActionPath: true,
     queuedActionsSurviveBlur: true,
     recursionGuard: true,
+    observableUnlockPolling: true,
     pending: () => Boolean(pendingTimer || pendingUnlock),
     wrappedCount: () => wrappedCount,
     scheduleCount: () => schedules,
