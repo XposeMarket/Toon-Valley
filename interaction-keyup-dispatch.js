@@ -72,9 +72,9 @@
         console.error('Toon Valley modal interaction Pointer Lock release timed out', interaction.prompt);
         return;
       }
-      requestAnimationFrame(waitForUnlock);
+      setTimeout(waitForUnlock, 12);
     };
-    requestAnimationFrame(waitForUnlock);
+    setTimeout(waitForUnlock, 0);
   }
 
   document.addEventListener('keydown', (event) => {
@@ -112,6 +112,7 @@
     active: true,
     executesAfterKeyup: true,
     preflightsModalUnlock: true,
+    timerBasedUnlockHandoff: true,
     pending: () => Boolean(armedInteraction),
     armCount: () => arms,
     keyupCount: () => keyups,
