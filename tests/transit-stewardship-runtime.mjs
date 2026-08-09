@@ -29,7 +29,7 @@ try{
     const retainedTrip=R.getTripState()[0],retainedPassengers=R.getPassengerState();
     R.processStopArrival(destinationIndex);R.refresh();
     const arrivedTrip=R.getTripState()[0],arrivedPassengers=R.getPassengerState(),walkStart=arrivedTrip.distanceToDestination;
-    await new Promise(r=>setTimeout(r,650));
+    R.refresh(.5);
     const walkingTrip=R.getTripState()[0],walkEnd=walkingTrip.distanceToDestination;
     return {money0,initial,initialVisual,started,startTarget,startVisual,picked,pickupTarget,pickupVisual,stepVisuals,ready,readyTarget,moneyBeforeSignoff,readyVisual,done,moneyAfter,doneVisual,nearVisual,nearBoards,boardedTrip,boardedPassengers,retainedTrip,retainedPassengers,arrivedTrip,arrivedPassengers,walkingTrip,walkStart,walkEnd,destinationName:destination.name,panelCount:S.panels.length,commuterCount:S.commuters.length,physicalToolkit:S.physicalToolkit,animatedCommuters:S.animatedCommuters,arrivalFeedback:S.arrivalFeedback,stateNormalization:S.stateNormalization,destinationTrips:R.destinationTrips,physicalDisembark:R.physicalDisembark,dynamicStopBoards:R.dynamicStopBoards,visibleBusPassengers:R.visibleBusPassengers,destinationWalks:R.destinationWalks,boardCount:R.stopBoards.length,passengerSlotCount:R.passengerSlots.length,destinationCount:R.destinations.length,titles:UI.getSummaries().map(x=>x.title)};
   });
@@ -48,7 +48,7 @@ try{
   if(!report.boardedTrip.boarded||report.boardedTrip.visible||report.boardedTrip.phase!=='riding'||report.boardedTrip.origin!=='Sunshine Park'||report.boardedTrip.destination!==report.destinationName||report.boardedPassengers.activePassengers!==1)throw new Error(`Commuter did not begin a visible destination trip ${JSON.stringify({trip:report.boardedTrip,passengers:report.boardedPassengers})}`);
   if(!report.retainedTrip.boarded||report.retainedTrip.visible||report.retainedTrip.phase!=='riding'||report.retainedPassengers.activePassengers!==1)throw new Error(`Legacy commuter updater prematurely ejected a rider ${JSON.stringify({trip:report.retainedTrip,passengers:report.retainedPassengers})}`);
   if(report.arrivedTrip.boarded||!report.arrivedTrip.visible||report.arrivedTrip.stop!==report.destinationName||!report.arrivedTrip.disembarking||!report.arrivedTrip.walkingToDestination||!report.arrivedTrip.destinationPoint||report.arrivedPassengers.activePassengers!==0)throw new Error(`Commuter did not physically disembark into a real destination walk ${JSON.stringify({trip:report.arrivedTrip,passengers:report.arrivedPassengers})}`);
-  if(report.walkingTrip.phase!=='walking'||!(report.walkEnd<report.walkStart-.35))throw new Error(`Disembarked commuter did not walk toward the destination ${JSON.stringify({start:report.walkStart,end:report.walkEnd,trip:report.walkingTrip})}`);
+  if(report.walkingTrip.phase!=='walking'||!(report.walkEnd<report.walkStart-.7))throw new Error(`Disembarked commuter did not walk toward the destination ${JSON.stringify({start:report.walkStart,end:report.walkEnd,trip:report.walkingTrip})}`);
   if(errors.length)throw new Error(errors.join('\n'));
   console.log('Transit stewardship, lifecycle ownership, visible passengers, destination walks, and stop-board checks passed',report);
 }finally{await browser.close();if(server)server.kill('SIGTERM')}
