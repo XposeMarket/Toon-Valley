@@ -25,6 +25,7 @@
   const pauseScreen = document.getElementById('pause-screen');
   let resumeAfterModal = false;
   let interactionUnlockPending = false;
+  let unlockTimer = 0;
   let modalUnlocksSuppressed = 0;
 
   const gamePointerLocked = () => Boolean(TV.renderer?.domElement && document.pointerLockElement === TV.renderer.domElement);
@@ -42,14 +43,22 @@
     if (TV.DEVICE.touch || !TV.state.started) return false;
     interactionUnlockPending = true;
     armResumeAfterModal();
+    clearTimeout(unlockTimer);
     if (gamePointerLocked()) {
-      try {
-        document.exitPointerLock();
-      } catch (error) {
-        interactionUnlockPending = false;
-        console.error('Unable to release Pointer Lock before modal interaction', error);
-        return false;
-      }
+      // Do not call exitPointerLock from inside the keyboard event dispatch. Some
+      // Chromium/WebGL combinations can stall the page when Pointer Lock exits
+      // synchronously from keyup. Release on the next task, then build UI only
+      // after pointerlockchange confirms the unlock.
+      unlockTimer = setTimeout(() => {
+        unlockTimer = 0;
+        try {
+          if (gamePointerLocked()) document.exitPointerLock();
+          else interactionUnlockPending = false;
+        } catch (error) {
+          interactionUnlockPending = false;
+          console.error('Unable to release Pointer Lock before modal interaction', error);
+        }
+      }, 0);
       return true;
     }
     interactionUnlockPending = false;
@@ -57,7 +66,7 @@
   }
 
   function modalInteractionReady() {
-    return !gamePointerLocked();
+    return !gamePointerLocked() && !interactionUnlockPending;
   }
 
   function revealResumeAfterModal() {
@@ -67,9 +76,6 @@
     resumeAfterModal = false;
   }
 
-  // Run from window capture so intentional UI unlocks are intercepted before the
-  // core document-level pause handler. Preflight unlocks happen before the modal
-  // exists, so interactionUnlockPending is part of the suppression condition.
   window.addEventListener('pointerlockchange', (event) => {
     if (TV.DEVICE.touch || gamePointerLocked()) return;
     if (interactionUnlockPending || TV.state.modalOpen || modalUIVisible()) {
@@ -92,6 +98,7 @@
     consumesModalPointerLockChange: true,
     explicitResumeAfterModal: true,
     preflightModalUnlock: true,
+    deferredPointerLockExit: true,
     modalVisible: modalUIVisible,
     prepareModalInteraction,
     modalInteractionReady,
