@@ -30,11 +30,14 @@
       /^Talk to /.test(prompt);
   };
 
-  const canRun = (interaction) => TV.state.started &&
-    !TV.state.modalOpen &&
-    interaction?.area === TV.state.area &&
-    typeof interaction.action === 'function' &&
-    (!interaction.enabled || interaction.enabled());
+  const canRun = (interaction) => {
+    const action = interaction?.action;
+    return TV.state.started &&
+      !TV.state.modalOpen &&
+      interaction?.area === TV.state.area &&
+      typeof action === 'function' &&
+      (!interaction.enabled || interaction.enabled());
+  };
 
   function executeRequest(request) {
     if (pendingRequest !== request) return;
@@ -145,8 +148,6 @@
 
   window.addEventListener('blur', () => {
     if (!pendingRequest) return;
-    // Keep an already-scheduled modal handoff alive across the expected Pointer
-    // Lock focus transition. Only clear stale timers if no request is pending.
     if (!pendingTimer) return;
   });
 
