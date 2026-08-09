@@ -46,7 +46,7 @@
       interaction.action();
     } catch (error) {
       lastError = String(error?.stack || error?.message || error);
-      console.error('Deferred Toon Valley interaction failed', error);
+      console.error('Toon Valley keyup interaction failed', error);
     }
   }
 
@@ -76,18 +76,19 @@
     armedInteraction = null;
     event.preventDefault();
     event.stopImmediatePropagation();
-    // Execute after keyup has fully returned, but while Pointer Lock is still owned
-    // by the game. Modal actions construct/mark their UI first; the pointer guard
-    // then defers the modal-owned exitPointerLock call to the following task.
-    setTimeout(() => execute(interaction), 0);
+    // Keydown no longer performs the interaction. Execute at the end of the
+    // matching KeyE gesture, after keydown has fully settled but without another
+    // timer/pointer-lock handoff layer. Modal actions can construct their UI, mark
+    // modalOpen, and use the browser's native Pointer Lock release normally.
+    execute(interaction);
   }, true);
 
   window.addEventListener('blur', () => { armedInteraction = null; });
 
   window.ToonValleyInteractionKeyupDispatch = Object.freeze({
     active: true,
-    executesAfterKeyup: true,
-    modalFirstDispatch: true,
+    executesOnKeyup: true,
+    nativeModalExit: true,
     pending: () => Boolean(armedInteraction),
     armCount: () => arms,
     keyupCount: () => keyups,
