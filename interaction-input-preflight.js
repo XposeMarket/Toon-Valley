@@ -61,7 +61,7 @@
   }
 
   function beginPreflight(interaction) {
-    if (pending) return;
+    if (pending || !interaction || typeof interaction.action !== 'function') return false;
     pending = true;
     unlockCount++;
     hidePause();
@@ -86,29 +86,28 @@
     } catch (error) {
       console.warn('Pointer Lock preflight release failed', error);
       run();
-      return;
+      return true;
     }
 
-    // Browser implementations can occasionally omit pointerlockchange on a lost or
-    // already-ending lock. Never leave the interaction wedged waiting for the event.
     setTimeout(run, 80);
+    return true;
+  }
+
+  function interact() {
+    if (TV.DEVICE.touch || !TV.state.started || TV.state.modalOpen || !gamePointerLocked()) return false;
+    return beginPreflight(nearestInteraction());
   }
 
   document.addEventListener('keydown', (event) => {
-    if (event.code !== 'KeyE' || event.repeat || TV.DEVICE.touch || !TV.state.started || TV.state.modalOpen) return;
-    if (!gamePointerLocked()) return;
-    const interaction = nearestInteraction();
-    if (!interaction || typeof interaction.action !== 'function') return;
-
-    // Own only the locked desktop E route. The core handler remains untouched for
-    // mobile, unlocked UI states, seated stand-up, and no-action informational uses.
+    if (event.code !== 'KeyE' || event.repeat) return;
+    if (!interact()) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    beginPreflight(interaction);
   }, true);
 
   window.ToonValleyInteractionInputPreflight = Object.freeze({
     active: true,
+    interact,
     pending: () => pending,
     unlockCount: () => unlockCount,
     physicalRelockCount: () => physicalRelockCount,
