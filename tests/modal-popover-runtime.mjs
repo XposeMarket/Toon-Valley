@@ -49,14 +49,6 @@ async function requireGamePointerLock(label) {
   if (!state.gamePointerLocked) throw new Error(`${label}: game Pointer Lock was not active ${JSON.stringify(state)}`);
 }
 
-async function dispatchKeyboardGesture(code, key = '') {
-  await page.evaluate(({ code, key }) => {
-    const options = { code, key: key || code, bubbles: true, cancelable: true, repeat: false };
-    document.dispatchEvent(new KeyboardEvent('keydown', options));
-    document.dispatchEvent(new KeyboardEvent('keyup', options));
-  }, { code, key });
-}
-
 async function moveToInteraction(area, prompt) {
   await page.evaluate(({ area, prompt }) => {
     const TV = window.ToonValley;
@@ -72,9 +64,12 @@ async function moveToInteraction(area, prompt) {
 async function openNearestWithE(label) {
   const before = await page.evaluate(() => window.ToonValleyDeferredInteractionDispatch.dispatchCount());
   const started = Date.now();
-  await dispatchKeyboardGesture('KeyE', 'e');
+  // Use Playwright's browser input channel instead of dispatching DOM keyboard
+  // events inside page.evaluate(). Pointer Lock changes during a renderer-side
+  // evaluate can deadlock the automation harness even when real user input works.
+  await page.keyboard.press('KeyE');
   const eventDuration = Date.now() - started;
-  if (eventDuration > 1500) throw new Error(`${label}: keyboard event dispatch blocked for ${eventDuration}ms`);
+  if (eventDuration > 1500) throw new Error(`${label}: real keyboard input blocked for ${eventDuration}ms`);
 
   try {
     await page.waitForFunction((previous) => window.ToonValleyDeferredInteractionDispatch.dispatchCount() > previous, before, { timeout: 3000 });
@@ -119,10 +114,12 @@ try {
     modalPauseSuppression: window.ToonValleyPointerGuard.modalPauseSuppression,
     explicitResumeAfterModal: window.ToonValleyPointerGuard.explicitResumeAfterModal,
     executesAfterKeyboardEvent: window.ToonValleyDeferredInteractionDispatch.executesAfterKeyboardEvent,
+    releasesPointerLockBeforeUI: window.ToonValleyDeferredInteractionDispatch.releasesPointerLockBeforeUI,
     preservesInteractionActions: window.ToonValleyDeferredInteractionDispatch.preservesInteractionActions,
+    preservesPhysicalActionPath: window.ToonValleyDeferredInteractionDispatch.preservesPhysicalActionPath,
     queuedActionsSurviveBlur: window.ToonValleyDeferredInteractionDispatch.queuedActionsSurviveBlur
   }));
-  if (!capabilities.nativeModalExit || !capabilities.modalPauseSuppression || !capabilities.explicitResumeAfterModal || !capabilities.executesAfterKeyboardEvent || !capabilities.preservesInteractionActions || !capabilities.queuedActionsSurviveBlur) {
+  if (!capabilities.nativeModalExit || !capabilities.modalPauseSuppression || !capabilities.explicitResumeAfterModal || !capabilities.executesAfterKeyboardEvent || !capabilities.releasesPointerLockBeforeUI || !capabilities.preservesInteractionActions || !capabilities.preservesPhysicalActionPath || !capabilities.queuedActionsSurviveBlur) {
     throw new Error(`Missing modal/input capabilities ${JSON.stringify(capabilities)}`);
   }
 
@@ -144,7 +141,7 @@ try {
   await closeResume('furniture catalog');
 
   if (errors.length) throw new Error(errors.join('\n'));
-  console.log('Toon Valley modal/popover lifecycle passed with real Pointer Lock and deferred E dispatch', { base: remoteURL || 'localhost', capabilities, final: await diagnostics() });
+  console.log('Toon Valley modal/popover lifecycle passed with real Pointer Lock and real keyboard input', { base: remoteURL || 'localhost', capabilities, final: await diagnostics() });
 } finally {
   await browser.close();
   server?.kill('SIGTERM');
