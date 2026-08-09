@@ -46,9 +46,10 @@ async function requireReleasedForModal(label) {
     modalOpen: window.ToonValley.state.modalOpen,
     pauseHidden: document.getElementById('pause-screen').classList.contains('hidden'),
     pointerLocked: Boolean(document.pointerLockElement),
-    pending: window.ToonValleyPointerGuard.pendingInteraction()
+    modalVisible: window.ToonValleyPointerGuard.modalVisible(),
+    resumePending: window.ToonValleyPointerGuard.resumePending()
   }));
-  if (!state.modalOpen || !state.pauseHidden || state.pointerLocked || state.pending) throw new Error(`${label}: modal release regression ${JSON.stringify(state)}`);
+  if (!state.modalOpen || !state.pauseHidden || state.pointerLocked || !state.modalVisible || !state.resumePending) throw new Error(`${label}: modal release regression ${JSON.stringify(state)}`);
 }
 
 async function closeResumeAndRequireGameplay(label) {
@@ -80,11 +81,9 @@ try {
   const guard = await page.evaluate(() => ({
     explicitResumeAfterModal: window.ToonValleyPointerGuard.explicitResumeAfterModal,
     modalExitDeferred: window.ToonValleyPointerGuard.modalExitDeferred,
-    modalInteractionPreflight: window.ToonValleyPointerGuard.modalInteractionPreflight,
-    modalPauseSuppression: window.ToonValleyPointerGuard.modalPauseSuppression,
-    prompts: window.ToonValleyPointerGuard.modalPrompts
+    modalPauseSuppression: window.ToonValleyPointerGuard.modalPauseSuppression
   }));
-  if (!guard.explicitResumeAfterModal || !guard.modalExitDeferred || !guard.modalInteractionPreflight || !guard.modalPauseSuppression || !guard.prompts.some((p) => p.includes('Talk to'))) throw new Error(`Pointer guard capabilities missing ${JSON.stringify(guard)}`);
+  if (!guard.explicitResumeAfterModal || !guard.modalExitDeferred || !guard.modalPauseSuppression) throw new Error(`Pointer guard capabilities missing ${JSON.stringify(guard)}`);
 
   const npcTarget = await page.evaluate(() => {
     const TV = window.ToonValley;
@@ -101,18 +100,11 @@ try {
   await page.waitForFunction((prompt) => document.getElementById('interaction-prompt')?.textContent.includes(prompt), npcTarget.prompt, { timeout: 6000 });
   checkpoint(`real prompt ready: ${npcTarget.prompt}`);
 
-  // Schedule the same bubbling E events on the browser's next task and return to
-  // Playwright immediately. This keeps the driver outside the Pointer Lock event
-  // stack, so a genuine page freeze becomes a short observable timeout instead of
-  // wedging Runtime.evaluate for the full process timeout.
-  await page.evaluate(() => {
-    setTimeout(() => {
-      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyE', key: 'e', bubbles: true, cancelable: true }));
-      document.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyE', key: 'e', bubbles: true, cancelable: true }));
-    }, 0);
-  });
+  // Exercise the real core E interaction path. No pointer-guard listener consumes or
+  // replays this input; the NPC action itself creates the popover synchronously.
+  await page.keyboard.press('KeyE');
   await requireReleasedForModal(npcTarget.prompt);
-  checkpoint('E interaction opened NPC popover after safe unlock');
+  checkpoint('E interaction opened NPC popover and released Pointer Lock safely');
   await closeResumeAndRequireGameplay(npcTarget.prompt);
 
   await page.evaluate(() => {
@@ -129,9 +121,9 @@ try {
   if (Math.hypot(after.x - before.x, after.z - before.z) < 0.35) throw new Error(`Gameplay did not resume after NPC popover ${JSON.stringify({ before, after })}`);
   checkpoint('WASD movement resumed');
 
-  await page.evaluate(() => {
-    setTimeout(() => window.ToonValleyUILayerFix.openTab('tasks'), 0);
-  });
+  // Programmatic ToonPhone opening uses the same shared life modal path and must
+  // produce the identical unlocked/modal/resume lifecycle.
+  await page.evaluate(() => window.ToonValleyUILayerFix.openTab('tasks'));
   await requireReleasedForModal('ToonPhone Tasks');
   checkpoint('ToonPhone opened through desktop UI layer');
   await page.click('[data-tab="inventory"]');
