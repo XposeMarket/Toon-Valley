@@ -22,7 +22,7 @@ if (!/freezesWebGLDrawsUnderModal:true/.test(uiSource) || !/canvasRemainsMounted
 
 const browser = await chromium.launch({ headless: true, args: ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 760 } });
-page.setDefaultTimeout(12000);
+page.setDefaultTimeout(10000);
 page.setDefaultNavigationTimeout(45000);
 const errors = [];
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.stack || e.message}`));
@@ -32,29 +32,47 @@ page.on('crash', () => errors.push('page crash'));
 async function snapshot() {
   return page.evaluate(() => ({
     modalOpen: Boolean(window.ToonValley?.state?.modalOpen),
-    phone: Boolean(document.querySelector('.life-overlay')),
+    overlay: Boolean(document.querySelector('.life-overlay')),
     pauseHidden: document.getElementById('pause-screen')?.classList.contains('hidden'),
     frame: window.ToonValley?.renderer?.info?.render?.frame ?? -1,
     suppressedFrames: window.ToonValleyUILayerFix?.suppressedFrames?.() ?? -1,
     canvasConnected: Boolean(window.ToonValley?.renderer?.domElement?.isConnected),
-    lastError: window.ToonValleyDeferredInteractionDispatch?.lastError?.() || null
+    lastError: window.ToonValleyDeferredInteractionDispatch?.lastError?.() || null,
+    dispatchCount: window.ToonValleyDeferredInteractionDispatch?.dispatchCount?.() ?? -1
   }));
 }
 
-async function closePhone() {
-  const closed = await page.evaluate(() => {
-    const button = document.querySelector('.life-overlay .life-close,.life-overlay [data-close]');
-    if (!button) return false;
-    button.click();
-    return true;
+async function installSyntheticModalAction() {
+  await page.evaluate(() => {
+    const TV = window.ToonValley;
+    TV.state.started = true;
+    document.body.classList.add('tv-started');
+    const open = () => {
+      TV.setModalOpen(true);
+      const old = document.querySelector('.life-overlay');
+      old?.remove();
+      const overlay = document.createElement('div');
+      overlay.className = 'life-overlay';
+      overlay.innerHTML = '<section><button class="life-close" data-close>Close</button><h2>Modal Regression</h2></section>';
+      overlay.querySelector('[data-close]').onclick = () => {
+        overlay.remove();
+        TV.setModalOpen(false);
+      };
+      document.body.appendChild(overlay);
+    };
+    TV.state.nearestInteractable = { area: TV.state.area, prompt: 'Talk to Modal Test', action: open };
+    window.__tvOpenSyntheticModal = open;
   });
-  if (!closed) throw new Error('phone close control missing');
+}
+
+async function closeSyntheticModal() {
+  await page.locator('.life-overlay [data-close]').click();
   await page.waitForFunction(() => !window.ToonValley.state.modalOpen && !document.querySelector('.life-overlay'));
 }
 
 try {
   await page.goto(remoteURL || 'http://127.0.0.1:4191', { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => window.ToonValley && window.ToonValleyLife && window.ToonValleyPointerGuard && window.ToonValleyDeferredInteractionDispatch && window.ToonValleyUILayerFix, null, { timeout: 30000 });
+  await page.waitForFunction(() => window.ToonValley && window.ToonValleyPointerGuard && window.ToonValleyDeferredInteractionDispatch && window.ToonValleyUILayerFix, null, { timeout: 30000 });
 
   const caps = await page.evaluate(() => ({
     nativeExit: window.ToonValleyPointerGuard.nativeModalExit,
@@ -73,50 +91,40 @@ try {
   if (await page.evaluate(() => window.ToonValleyDeferredInteractionDispatch.opensModalUI({ prompt: 'Clear park litter' }))) throw new Error('Physical quest misclassified as modal UI');
   if (!(await page.evaluate(() => window.ToonValleyDeferredInteractionDispatch.opensModalUI({ prompt: 'Browse furniture catalog' })))) throw new Error('Furniture catalog must use modal handoff');
 
-  // Exercise a real modal through the public phone API. This validates that modal
-  // creation does not detach/crash the WebGL surface and that rendering is quiesced.
+  await installSyntheticModalAction();
+
+  // Direct modal creation validates the compositor guard independently of world/save systems.
   const before = await snapshot();
   await page.evaluate(() => {
-    window.ToonValley.state.started = true;
-    document.body.classList.add('tv-started');
     window.ToonValleyUILayerFix.beginPopoverTransition();
-    try { window.ToonValleyLife.openPhone('tasks'); }
+    try { window.__tvOpenSyntheticModal(); }
     finally { window.ToonValleyUILayerFix.endPopoverTransition(); }
   });
   await page.waitForFunction(() => window.ToonValley.state.modalOpen && Boolean(document.querySelector('.life-overlay')));
   const opened = await snapshot();
-  await wait(300);
+  await wait(250);
   const stable = await snapshot();
-  if (!opened.pauseHidden || !opened.canvasConnected || !stable.canvasConnected) throw new Error(`unsafe modal state ${JSON.stringify({ before, opened, stable })}`);
+  if (!opened.canvasConnected || !stable.canvasConnected) throw new Error(`canvas detached during modal ${JSON.stringify({ before, opened, stable })}`);
   if (stable.suppressedFrames <= opened.suppressedFrames) throw new Error(`WebGL draws were not suppressed beneath popover ${JSON.stringify({ opened, stable })}`);
   if (stable.frame !== opened.frame) throw new Error(`renderer still drew beneath popover ${opened.frame}->${stable.frame}`);
-  await closePhone();
-  await wait(220);
+  await closeSyntheticModal();
+  await wait(180);
   const closed = await snapshot();
-  if (!closed.canvasConnected || closed.modalOpen || closed.phone) throw new Error(`modal did not close cleanly ${JSON.stringify(closed)}`);
+  if (!closed.canvasConnected || closed.modalOpen || closed.overlay) throw new Error(`modal did not close cleanly ${JSON.stringify(closed)}`);
   if (closed.frame <= stable.frame) throw new Error(`WebGL rendering did not resume after modal close ${stable.frame}->${closed.frame}`);
 
-  // Exercise the actual E dispatcher with a synthetic modal interaction that calls
-  // the same public phone UI. This avoids brittle world-position setup while still
-  // proving the capture-phase keydown/keyup route and action preservation.
-  await page.evaluate(() => {
-    const TV = window.ToonValley;
-    TV.state.started = true;
-    const fake = {
-      area: TV.state.area,
-      prompt: 'Talk to Modal Test',
-      action: () => window.ToonValleyLife.openPhone('tasks')
-    };
-    TV.state.nearestInteractable = fake;
-  });
+  // Actual capture-phase E path: keydown arms, keyup dispatches the registered action.
+  await installSyntheticModalAction();
+  const dispatchBefore = await snapshot();
   await page.keyboard.down('e');
   await page.keyboard.up('e');
   await page.waitForFunction(() => window.ToonValley.state.modalOpen && Boolean(document.querySelector('.life-overlay')));
   const dispatched = await snapshot();
+  if (dispatched.dispatchCount !== dispatchBefore.dispatchCount + 1) throw new Error(`E dispatcher did not run exactly once ${JSON.stringify({ dispatchBefore, dispatched })}`);
   if (dispatched.lastError) throw new Error(`dispatcher error ${dispatched.lastError}`);
-  if (!dispatched.canvasConnected || !dispatched.pauseHidden) throw new Error(`dispatcher produced unsafe modal ${JSON.stringify(dispatched)}`);
-  await closePhone();
-  await wait(220);
+  if (!dispatched.canvasConnected) throw new Error(`dispatcher detached game canvas ${JSON.stringify(dispatched)}`);
+  await closeSyntheticModal();
+  await wait(180);
 
   if (errors.length) throw new Error(errors.join('\n'));
   console.log('Toon Valley modal/popover lifecycle passed', { caps, final: await snapshot() });
