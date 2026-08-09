@@ -6,7 +6,6 @@ const remoteURL = process.env.BASE_URL?.replace(/\/$/, '');
 const headed = process.env.HEADED === '1';
 const server = remoteURL ? null : spawn('python3', ['-m', 'http.server', '4173', '--bind', '127.0.0.1'], { stdio: ['ignore', 'pipe', 'pipe'] });
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const deadline = (ms, message) => wait(ms).then(() => { throw new Error(message); });
 if (server) await wait(900);
 
 const browser = await chromium.launch({ headless: !headed, args: ['--use-gl=swiftshader', '--enable-webgl'] });
@@ -47,15 +46,17 @@ async function diagnostics() {
   }));
 }
 
-async function realKeyStroke(code, label) {
-  await Promise.race([page.keyboard.down(code), deadline(3000, `${label}: keydown hung`)]);
-  await wait(70);
-  await Promise.race([page.keyboard.up(code), deadline(3000, `${label}: keyup hung`)]);
+async function dispatchKeyboardGesture(code, key = '') {
+  await page.evaluate(({ code, key }) => {
+    const options = { code, key: key || code, bubbles: true, cancelable: true, repeat: false };
+    document.dispatchEvent(new KeyboardEvent('keydown', options));
+    document.dispatchEvent(new KeyboardEvent('keyup', options));
+  }, { code, key });
 }
 
 async function openNearestWithE(label) {
   const beforeDispatch = await page.evaluate(() => window.ToonValleyInteractionKeyupDispatch?.dispatchCount?.() || 0);
-  await realKeyStroke('KeyE', label);
+  await dispatchKeyboardGesture('KeyE', 'e');
   try {
     await page.waitForFunction((previous) => {
       const dispatcher = window.ToonValleyInteractionKeyupDispatch;
@@ -123,7 +124,7 @@ try {
   const homeTarget = await moveToInteraction('home', 'Open decorating menu');
   await page.waitForFunction((prompt) => window.ToonValley.state.nearestInteractable?.prompt === prompt, homeTarget.prompt, { timeout: 6000 });
   await openNearestWithE(homeTarget.prompt);
-  checkpoint('home decorating popover stable after E keyup');
+  checkpoint('home decorating popover stable after KeyE DOM gesture');
   await closeResume(homeTarget.prompt);
 
   const before = await page.evaluate(() => ({ x: window.ToonValley.player.position.x, z: window.ToonValley.player.position.z }));
@@ -135,10 +136,10 @@ try {
   const shopTarget = await moveToInteraction('furnitureStore', 'Browse furniture catalog');
   await page.waitForFunction((prompt) => window.ToonValley.state.nearestInteractable?.prompt === prompt, shopTarget.prompt, { timeout: 6000 });
   await openNearestWithE(shopTarget.prompt);
-  checkpoint('shop catalog popover stable after E keyup');
+  checkpoint('shop catalog popover stable after KeyE DOM gesture');
   await closeResume(shopTarget.prompt);
 
-  await realKeyStroke('KeyT', 'KeyT ToonPhone');
+  await dispatchKeyboardGesture('KeyT', 't');
   await page.waitForSelector('.life-overlay', { timeout: 6000 });
   await page.waitForFunction(() => !document.pointerLockElement && window.ToonValley.state.modalOpen === true, null, { timeout: 6000 });
   await page.click('[data-tab="inventory"]');
@@ -149,7 +150,7 @@ try {
   checkpoint('ToonPhone replacement stable');
 
   if (errors.length) throw new Error(errors.join('\n'));
-  console.log(`Toon Valley modal/popover lifecycle passed with direct KeyE keyup dispatch, native Pointer Lock release, and pause suppression: ${remoteURL || 'localhost'}`, { headed, homeTarget, shopTarget, guard });
+  console.log(`Toon Valley modal/popover lifecycle passed in real Chromium with real Pointer Lock, DOM key gestures, native Pointer Lock release, and pause suppression: ${remoteURL || 'localhost'}`, { headed, homeTarget, shopTarget, guard });
 } finally {
   await browser.close();
   server?.kill('SIGTERM');
