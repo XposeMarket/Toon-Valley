@@ -28,13 +28,14 @@ const requiredGuard = [
   'modalUnlocksSuppressed',
   'revealResumeAfterModal',
   "document.addEventListener('pointerlockchange'",
-  'event.stopImmediatePropagation()',
+  'queueMicrotask(hidePause)',
   'new MutationObserver',
   'modalVisible: modalUIVisible',
   'resumePending: () => resumeAfterModal',
   'suppressedModalUnlocks: () => modalUnlocksSuppressed'
 ];
 for (const snippet of requiredGuard) if (!guard.includes(snippet)) throw new Error(`Popover input invariant missing: ${snippet}`);
+if (guard.includes('stopImmediatePropagation')) throw new Error('Modal pointer-lock guard must not synchronously cancel pointerlockchange');
 if (guard.includes("event.code !== 'KeyE'") || guard.includes('preflightUIInteraction') || guard.includes('wrapModalInteraction')) throw new Error('Popover guard must not intercept, defer, or wrap gameplay interactions');
 if (guard.includes('requestPointerLock') || guard.includes('Document.prototype.exitPointerLock')) throw new Error('Popover guard must not monkey-patch Pointer Lock APIs');
 
@@ -44,4 +45,4 @@ if (modalStateIndex < 0 || modalExitIndex < modalStateIndex) throw new Error('Li
 if (!game.includes("if (event.code === 'KeyE' && !event.repeat) interact();")) throw new Error('Desktop E key must continue routing directly to interact()');
 if (!game.includes('if (nearest.action) nearest.action();')) throw new Error('interact() must continue executing the nearest interaction action directly');
 
-console.log('Toon Valley service-worker stale-upgrade, native E route, and modal lifecycle invariants passed.');
+console.log('Toon Valley service-worker stale-upgrade, native E route, and non-blocking modal lifecycle invariants passed.');
