@@ -21,6 +21,26 @@
     captureGuarded = true;
   }
 
+  const documentProto = globalThis.Document?.prototype;
+  const nativeExitPointerLock = documentProto?.exitPointerLock;
+  let modalExitDeferred = Boolean(nativeExitPointerLock?.__toonValleyModalDeferred);
+  if (documentProto && typeof nativeExitPointerLock === 'function' && !modalExitDeferred) {
+    function safeExitPointerLock() {
+      if (!TV.DEVICE.touch && TV.state.modalOpen && document.pointerLockElement) {
+        const doc = this;
+        setTimeout(() => {
+          try { nativeExitPointerLock.call(doc); }
+          catch (error) { console.warn('Deferred modal Pointer Lock release failed', error); }
+        }, 0);
+        return undefined;
+      }
+      return nativeExitPointerLock.call(this);
+    }
+    safeExitPointerLock.__toonValleyModalDeferred = true;
+    documentProto.exitPointerLock = safeExitPointerLock;
+    modalExitDeferred = true;
+  }
+
   const modalSelector = '.life-overlay,.mb-overlay,.ohx,#build-controls,#ohbuild,#bl-controls';
   const pauseScreen = document.getElementById('pause-screen');
   let resumeAfterModal = false;
@@ -44,10 +64,6 @@
     resumeAfterModal = false;
   }
 
-  // Modal systems mark modalOpen before releasing Pointer Lock. Let the native
-  // pointerlockchange event finish normally so no synchronous event cancellation
-  // can wedge Chromium/Safari. The core listener may briefly toggle Pause on the
-  // same event; hide it again in a microtask before the browser paints the dialog.
   document.addEventListener('pointerlockchange', () => {
     if (TV.DEVICE.touch || gamePointerLocked()) return;
     if (TV.state.modalOpen || modalUIVisible()) {
@@ -56,8 +72,6 @@
     }
   }, true);
 
-  // Closing the final dialog does not create another pointerlockchange event. Once
-  // modal state and DOM are both clear, deliberately expose the normal Resume UI.
   const observer = new MutationObserver(() => queueMicrotask(revealResumeAfterModal));
   if (document.body) observer.observe(document.body, { childList: true, subtree: true });
   document.addEventListener('click', () => queueMicrotask(revealResumeAfterModal));
@@ -66,8 +80,9 @@
   window.ToonValleyPointerGuard = Object.freeze({
     active: captureGuarded,
     pointerCapture: captureGuarded,
+    modalExitDeferred,
     modalPauseSuppression: true,
-    nativeModalLifecycle: true,
+    nativePointerLockEvents: true,
     explicitResumeAfterModal: true,
     modalVisible: modalUIVisible,
     armResumeAfterModal,
