@@ -102,11 +102,10 @@ try {
   const guard = await page.evaluate(() => ({
     explicitResumeAfterModal: window.ToonValleyPointerGuard.explicitResumeAfterModal,
     modalPauseSuppression: window.ToonValleyPointerGuard.modalPauseSuppression,
-    nativePointerLockEvents: window.ToonValleyPointerGuard.nativePointerLockEvents,
-    modalExitDeferred: window.ToonValleyPointerGuard.modalExitDeferred,
+    consumesModalPointerLockChange: window.ToonValleyPointerGuard.consumesModalPointerLockChange,
     keyupDispatch: window.ToonValleyInteractionKeyupDispatch.executesAfterKeyup
   }));
-  if (!guard.explicitResumeAfterModal || !guard.modalPauseSuppression || !guard.nativePointerLockEvents || !guard.modalExitDeferred || !guard.keyupDispatch) throw new Error(`Pointer/input capabilities missing ${JSON.stringify(guard)}`);
+  if (!guard.explicitResumeAfterModal || !guard.modalPauseSuppression || !guard.consumesModalPointerLockChange || !guard.keyupDispatch) throw new Error(`Pointer/input capabilities missing ${JSON.stringify(guard)}`);
 
   const homeTarget = await moveToInteraction('home', 'Open decorating menu');
   await page.waitForFunction((prompt) => window.ToonValley.state.nearestInteractable?.prompt === prompt, homeTarget.prompt, { timeout: 6000 });
@@ -137,7 +136,7 @@ try {
   checkpoint('ToonPhone replacement stable');
 
   if (errors.length) throw new Error(errors.join('\n'));
-  console.log(`Toon Valley modal/popover lifecycle passed with real keydown/keyup and Pointer Lock: ${remoteURL || 'localhost'}`, { homeTarget, shopTarget, guard });
+  console.log(`Toon Valley modal/popover lifecycle passed with real keydown/keyup and modal pause suppression: ${remoteURL || 'localhost'}`, { homeTarget, shopTarget, guard });
 } finally {
   await browser.close();
   server?.kill('SIGTERM');
