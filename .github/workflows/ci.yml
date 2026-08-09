@@ -87,6 +87,8 @@ jobs:
         run: |
           npm install --no-save playwright@1.55.0
           npx playwright install --with-deps chromium
+      - name: Modal and popover Pointer Lock lifecycle test
+        run: timeout 150s node tests/modal-popover-runtime.mjs
       - name: Mobile browser smoke test
         run: timeout 150s node tests/mobile-smoke.mjs
       - name: World extension runtime test
@@ -107,10 +109,13 @@ jobs:
         run: timeout 150s node tests/indoor-service-quests-runtime.mjs
       - name: Community trail and errand lifecycle test
         run: timeout 150s node tests/community-life-runtime.mjs
-      - name: Modal and popover Pointer Lock lifecycle test
-        run: timeout 150s node tests/modal-popover-runtime.mjs
       - name: Local browser smoke test
         run: timeout 150s node tests/smoke.mjs
+      - name: Production modal and popover verification
+        if: github.event_name == 'push'
+        env:
+          BASE_URL: https://toon-valley.vercel.app
+        run: timeout 150s node tests/modal-popover-runtime.mjs
       - name: Production mobile browser check
         if: github.event_name == 'push'
         env:
@@ -156,11 +161,6 @@ jobs:
         env:
           BASE_URL: https://toon-valley.vercel.app
         run: timeout 150s node tests/community-life-runtime.mjs
-      - name: Production modal and popover verification
-        if: github.event_name == 'push'
-        env:
-          BASE_URL: https://toon-valley.vercel.app
-        run: timeout 150s node tests/modal-popover-runtime.mjs
       - name: Production world extension verification
         if: github.event_name == 'push'
         env:
