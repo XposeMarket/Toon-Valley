@@ -53,9 +53,10 @@ async function requireReleasedForModal(label) {
     pauseHidden: document.getElementById('pause-screen').classList.contains('hidden'),
     pointerLocked: Boolean(document.pointerLockElement),
     modalVisible: window.ToonValleyPointerGuard.modalVisible(),
-    resumePending: window.ToonValleyPointerGuard.resumePending()
+    resumePending: window.ToonValleyPointerGuard.resumePending(),
+    suppressed: window.ToonValleyPointerGuard.suppressedModalUnlocks()
   }));
-  if (!state.modalOpen || !state.pauseHidden || state.pointerLocked || !state.modalVisible || !state.resumePending) throw new Error(`${label}: modal release regression ${JSON.stringify(state)}`);
+  if (!state.modalOpen || !state.pauseHidden || state.pointerLocked || !state.modalVisible || !state.resumePending || state.suppressed < 1) throw new Error(`${label}: modal release regression ${JSON.stringify(state)}`);
 }
 
 async function closeResumeAndRequireGameplay(label) {
@@ -75,18 +76,17 @@ try {
   await page.click('#play-button');
   await page.waitForFunction(() => window.ToonValley.state.started === true);
   await requireGamePointerLock('initial play');
+  checkpoint('initial pointer lock active');
 
   const guard = await page.evaluate(() => ({
     explicitResumeAfterModal: window.ToonValleyPointerGuard.explicitResumeAfterModal,
     modalPauseSuppression: window.ToonValleyPointerGuard.modalPauseSuppression,
-    modalInteractionWrapping: window.ToonValleyPointerGuard.modalInteractionWrapping,
-    wrappedCount: window.ToonValleyPointerGuard.wrappedCount()
+    nativeModalLifecycle: window.ToonValleyPointerGuard.nativeModalLifecycle
   }));
-  if (!guard.explicitResumeAfterModal || !guard.modalPauseSuppression || !guard.modalInteractionWrapping || guard.wrappedCount < 1) throw new Error(`Pointer guard capabilities missing ${JSON.stringify(guard)}`);
+  if (!guard.explicitResumeAfterModal || !guard.modalPauseSuppression || !guard.nativeModalLifecycle) throw new Error(`Pointer guard capabilities missing ${JSON.stringify(guard)}`);
 
   const npcTarget = await page.evaluate(() => {
     const TV = window.ToonValley;
-    window.ToonValleyPointerGuard.rescan();
     const interaction = TV.interactables.find((item) => /^Talk to /.test(item.prompt || '') && typeof item.action === 'function' && item.area === 'world');
     if (!interaction) throw new Error('No outdoor NPC talk interaction found');
     const x = interaction.object ? interaction.object.position.x : interaction.x;
@@ -95,7 +95,7 @@ try {
     TV.player.position.set(x, TV.terrainHeight(x, z), z);
     TV.playerVelocity.set(0, 0, 0);
     TV.state.cameraReady = false;
-    return { prompt: interaction.prompt };
+    return { prompt: interaction.prompt, actionSource: String(interaction.action).slice(0, 160) };
   });
   await page.waitForFunction((prompt) => document.getElementById('interaction-prompt')?.textContent.includes(prompt), npcTarget.prompt, { timeout: 6000 });
   checkpoint(`real prompt ready: ${npcTarget.prompt}`);
@@ -115,6 +115,7 @@ try {
   await page.keyboard.down('KeyW'); await wait(450); await page.keyboard.up('KeyW');
   const after = await page.evaluate(() => ({ x: window.ToonValley.player.position.x, z: window.ToonValley.player.position.z }));
   if (Math.hypot(after.x - before.x, after.z - before.z) < 0.35) throw new Error(`Gameplay did not resume after NPC popover ${JSON.stringify({ before, after })}`);
+  checkpoint('WASD movement resumed');
 
   await page.evaluate(() => window.ToonValleyUILayerFix.openTab('tasks'));
   await page.waitForSelector('.life-overlay', { timeout: 6000 });
@@ -123,6 +124,7 @@ try {
   await page.waitForSelector('.life-overlay [data-tab="inventory"].active', { timeout: 6000 });
   const replacement = await page.evaluate(() => ({ modalOpen: window.ToonValley.state.modalOpen, pointerLocked: Boolean(document.pointerLockElement), pauseHidden: document.getElementById('pause-screen').classList.contains('hidden') }));
   if (!replacement.modalOpen || replacement.pointerLocked || !replacement.pauseHidden) throw new Error(`ToonPhone modal replacement regression ${JSON.stringify(replacement)}`);
+  checkpoint('ToonPhone replacement stable');
   await closeResumeAndRequireGameplay('ToonPhone replacement');
 
   if (errors.length) throw new Error(errors.join('\n'));
