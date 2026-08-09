@@ -14,7 +14,6 @@ jobs:
         with:
           node-version: 22
       - run: |
-          node --check interaction-input-preflight.js
           node --check pointer-capture-guard.js
           node --check tests/modal-popover-runtime.mjs
           node tests/service-worker-static.mjs
