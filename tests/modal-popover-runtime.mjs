@@ -10,6 +10,7 @@ if (server) await wait(900);
 
 const dispatchSource = readFileSync(new URL('../interaction-deferred-dispatch.js', import.meta.url), 'utf8');
 const guardSource = readFileSync(new URL('../pointer-capture-guard.js', import.meta.url), 'utf8');
+const uiSource = readFileSync(new URL('../ui-layer-fix.js', import.meta.url), 'utf8');
 if (!/executesOnKeyup:\s*true/.test(dispatchSource)) throw new Error('Desktop interaction handoff must execute on KeyE keyup');
 if (!/preservesPhysicalActionPath:\s*true/.test(dispatchSource)) throw new Error('Physical action path invariant missing');
 if (!/explicitPointerLockHandoff:\s*true/.test(dispatchSource) || !/actionRunsAfterUnlock:\s*true/.test(dispatchSource)) throw new Error('Modal Pointer Lock handoff invariant missing');
@@ -19,6 +20,7 @@ if (!/document\.addEventListener\('pointerlockchange',\s*\(\)\s*=>\s*finishModal
 if (!/handoffTimer\s*=\s*setTimeout\(\(\)\s*=>\s*finishModalHandoff\('timeout'\),\s*180\)/.test(dispatchSource)) throw new Error('Modal handoff needs a bounded browser fallback');
 if (/interaction\.action\s*=/.test(dispatchSource)) throw new Error('Desktop E safety must not replace registered interaction actions');
 if (!/!gamePointerLocked\(\)/.test(guardSource)) throw new Error('Modal resume guard must only arm from genuine gameplay Pointer Lock');
+if (!/freezesWebGLDrawsUnderModal:true/.test(uiSource) || !/canvasRemainsMounted:true/.test(uiSource)) throw new Error('Popover GPU compositing guard missing');
 
 const browser = await chromium.launch({ headless: true, args: ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 760 } });
@@ -36,6 +38,8 @@ async function snapshot() {
     overlay: Boolean(document.querySelector(selector)),
     pauseHidden: document.getElementById('pause-screen')?.classList.contains('hidden'),
     frame: window.ToonValley?.renderer?.info?.render?.frame ?? -1,
+    suppressedFrames: window.ToonValleyUILayerFix?.suppressedFrames?.() ?? -1,
+    canvasConnected: Boolean(window.ToonValley?.renderer?.domElement?.isConnected),
     dispatcher: window.ToonValleyDeferredInteractionDispatch ? {
       explicitHandoff: window.ToonValleyDeferredInteractionDispatch.explicitPointerLockHandoff,
       actionAfterUnlock: window.ToonValleyDeferredInteractionDispatch.actionRunsAfterUnlock,
@@ -58,17 +62,19 @@ async function openRealInteraction(area, prompt, label) {
   if (result.missing) throw new Error(`${label}: interaction missing`);
   await page.waitForFunction((selector) => window.ToonValley.state.modalOpen && Boolean(document.querySelector(selector)), modalSelector, { timeout: 5000 });
   const opened = await snapshot();
-  if (!opened.modalOpen || !opened.overlay || !opened.pauseHidden) throw new Error(`${label}: unsafe modal state ${JSON.stringify(opened)}`);
-  const frameA = opened.frame;
-  await wait(250);
-  const frameB = (await snapshot()).frame;
-  if (frameB <= frameA) throw new Error(`${label}: render loop stalled while popover open ${frameA}->${frameB}`);
+  if (!opened.modalOpen || !opened.overlay || !opened.pauseHidden || !opened.canvasConnected) throw new Error(`${label}: unsafe modal state ${JSON.stringify(opened)}`);
+  await wait(300);
+  const stable = await snapshot();
+  if (stable.suppressedFrames <= opened.suppressedFrames) throw new Error(`${label}: WebGL draws were not suppressed beneath popover ${JSON.stringify({ opened, stable })}`);
+  if (stable.frame !== opened.frame) throw new Error(`${label}: renderer still drew beneath popover ${opened.frame}->${stable.frame}`);
+  if (!stable.canvasConnected) throw new Error(`${label}: game canvas detached during popover`);
   if (errors.length) throw new Error(`${label}: ${errors.join('\n')}`);
   if (opened.dispatcher?.lastError) throw new Error(`${label}: dispatcher error ${opened.dispatcher.lastError}`);
   return before;
 }
 
 async function closeRealModal(label) {
+  const before = await snapshot();
   const clicked = await page.evaluate(() => {
     const button = document.querySelector('.life-close,[data-close],.mb-btn.close');
     if (!button) return false;
@@ -77,8 +83,10 @@ async function closeRealModal(label) {
   });
   if (!clicked) throw new Error(`${label}: close button missing`);
   await page.waitForFunction((selector) => !window.ToonValley.state.modalOpen && !document.querySelector(selector), modalSelector, { timeout: 5000 });
+  await wait(220);
   const closed = await snapshot();
-  if (closed.modalOpen || closed.overlay) throw new Error(`${label}: modal did not close cleanly ${JSON.stringify(closed)}`);
+  if (closed.modalOpen || closed.overlay || !closed.canvasConnected) throw new Error(`${label}: modal did not close cleanly ${JSON.stringify(closed)}`);
+  if (closed.frame <= before.frame) throw new Error(`${label}: WebGL rendering did not resume after modal close ${before.frame}->${closed.frame}`);
 }
 
 try {
@@ -93,7 +101,9 @@ try {
     actionAfterUnlock: window.ToonValleyDeferredInteractionDispatch.actionRunsAfterUnlock,
     preserveActions: window.ToonValleyDeferredInteractionDispatch.preservesInteractionActions,
     preservePhysical: window.ToonValleyDeferredInteractionDispatch.preservesPhysicalActionPath,
-    gpuSafe: window.ToonValleyUILayerFix.gpuSafePopoverCompositing
+    gpuSafe: window.ToonValleyUILayerFix.gpuSafePopoverCompositing,
+    freezesDraws: window.ToonValleyUILayerFix.freezesWebGLDrawsUnderModal,
+    canvasMounted: window.ToonValleyUILayerFix.canvasRemainsMounted
   }));
   if (!Object.values(caps).every(Boolean)) throw new Error(`Missing modal safety capabilities ${JSON.stringify(caps)}`);
   if (await page.evaluate(() => window.ToonValleyDeferredInteractionDispatch.opensModalUI({ prompt: 'Clear park litter' }))) throw new Error('Physical quest misclassified as modal UI');
@@ -108,6 +118,6 @@ try {
   if (errors.length) throw new Error(errors.join('\n'));
   console.log('Toon Valley modal/popover lifecycle passed', { caps, final: await snapshot() });
 } finally {
-  await Promise.race([browser.close(), wait(5000)]);
+  try { await browser.close(); } catch {}
   server?.kill('SIGTERM');
 }
