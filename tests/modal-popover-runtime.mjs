@@ -13,7 +13,7 @@ const guardSource = readFileSync(new URL('../pointer-capture-guard.js', import.m
 if (!/executesOnKeyup:\s*true/.test(dispatchSource)) throw new Error('Desktop interaction handoff must execute on KeyE keyup');
 if (!/preservesPhysicalActionPath:\s*true/.test(dispatchSource)) throw new Error('Physical action path invariant missing');
 if (!/explicitPointerLockHandoff:\s*true/.test(dispatchSource) || !/actionRunsAfterUnlock:\s*true/.test(dispatchSource)) throw new Error('Modal Pointer Lock handoff invariant missing');
-if (!/document\.exitPointerLock/.test(dispatchSource) || dispatchSource.indexOf('document.exitPointerLock') > dispatchSource.indexOf('function runAction')) throw new Error('Dispatcher must own Pointer Lock release before modal action execution');
+if (!/document\.exitPointerLock/.test(dispatchSource) || !/function finishModalHandoff/.test(dispatchSource)) throw new Error('Dispatcher must own a bounded Pointer Lock handoff before modal action execution');
 if (/interaction\.action\s*=/.test(dispatchSource)) throw new Error('Desktop E safety must not replace registered interaction actions');
 if (!/!gamePointerLocked\(\)/.test(guardSource)) throw new Error('Modal resume guard must only arm from genuine gameplay Pointer Lock');
 
