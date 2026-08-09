@@ -132,14 +132,15 @@
 
   let phase = 0;
   function updateCommuter(g, dt) {
+    g.userData.cooldown = Math.max(0, (g.userData.cooldown || 0) - dt);
+    if (g.userData.riderLifeManaged) return;
     const stop = g.userData.stop, base = g.userData.baseOffset;
     const distBus = Math.hypot(Transit.bus.position.x - stop.routeX, Transit.bus.position.z - stop.routeZ);
     const atStop = Transit.stopped && distBus < 7;
     if (g.userData.boarded) {
-      g.userData.cooldown = Math.max(0, g.userData.cooldown - dt);
       if (!atStop && distBus > 18 && g.userData.cooldown <= 0) { g.userData.boarded = false; g.visible = true; }
     }
-    if (!g.userData.boarded && atStop) {
+    if (!g.userData.boarded && atStop && g.userData.cooldown <= 0) {
       const dx = Transit.bus.position.x - g.position.x, dz = Transit.bus.position.z - g.position.z;
       const d = Math.hypot(dx, dz);
       if (d < .9) { g.userData.boarded = true; g.userData.cooldown = 5; g.visible = false; return; }
