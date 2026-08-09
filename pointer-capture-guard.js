@@ -29,13 +29,67 @@
   const pauseScreen = document.getElementById('pause-screen');
   let resumeAfterModal = false;
   let releaseQueued = false;
+  let interactionPreflight = false;
 
   const gamePointerLocked = () => Boolean(TV.renderer?.domElement && document.pointerLockElement === TV.renderer.domElement);
   const modalUIVisible = () => Boolean(document.querySelector(modalSelector));
   const hidePause = () => pauseScreen?.classList.add('hidden');
 
+  function interactionOpensModal(item) {
+    if (!item || typeof item.action !== 'function') return false;
+    if (item.opensModal === true) return true;
+    const prompt = item.prompt || '';
+    if (/^Talk to /.test(prompt)) return true;
+    if (/^(Browse counter|Order snack|Shop outdoor market|Open job & property desk|Browse furniture catalog|Open decorating menu)$/.test(prompt)) return true;
+    const source = String(item.action);
+    return /\b(openNPC|openShop|openCafeCounter|openOutdoorMarket|openJobs|openPhone)\b/.test(source);
+  }
+
+  function revealResumeAfterModal() {
+    if (!resumeAfterModal || interactionPreflight || TV.DEVICE.touch || !TV.state.started) return;
+    if (TV.state.modalOpen || modalUIVisible() || gamePointerLocked()) return;
+    pauseScreen?.classList.remove('hidden');
+    resumeAfterModal = false;
+  }
+
+  function preflightUIInteraction(event, item) {
+    if (interactionPreflight || TV.DEVICE.touch || !TV.state.started || !gamePointerLocked()) return false;
+    if (!interactionOpensModal(item)) return false;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    interactionPreflight = true;
+    resumeAfterModal = true;
+    hidePause();
+    const action = item.action;
+
+    try {
+      nativeExitPointerLock?.call(document);
+    } catch (error) {
+      interactionPreflight = false;
+      console.warn('UI interaction Pointer Lock preflight failed', error);
+      queueMicrotask(revealResumeAfterModal);
+      return true;
+    }
+
+    setTimeout(() => {
+      interactionPreflight = false;
+      if (!TV.state.started || TV.state.modalOpen || modalUIVisible()) {
+        queueMicrotask(revealResumeAfterModal);
+        return;
+      }
+      try {
+        action();
+      } catch (error) {
+        console.error('Deferred UI interaction failed', error);
+      }
+      queueMicrotask(revealResumeAfterModal);
+    }, 0);
+    return true;
+  }
+
   function releaseModalPointerLock(doc = document) {
-    if (releaseQueued || TV.DEVICE.touch || !TV.state.started) return;
+    if (releaseQueued || interactionPreflight || TV.DEVICE.touch || !TV.state.started) return;
     if (!(TV.state.modalOpen || modalUIVisible()) || !doc.pointerLockElement) return;
     releaseQueued = true;
     setTimeout(() => {
@@ -49,9 +103,8 @@
     }, 0);
   }
 
-  // Exiting Pointer Lock synchronously from the same keyboard event that opens a
-  // dialog can wedge Chromium/WebKit. Modal exits are therefore moved onto the next
-  // task. Ordinary Esc/pause exits stay native and synchronous.
+  // If a modal is opened programmatically while Pointer Lock is still active, move
+  // the release onto the next task. Ordinary Esc/pause exits remain native.
   if (documentProto && typeof nativeExitPointerLock === 'function' && !modalExitDeferred) {
     function guardedExitPointerLock() {
       if (window.ToonValley?.state?.modalOpen) {
@@ -65,29 +118,30 @@
     modalExitDeferred = true;
   }
 
-  // The core pointerlockchange listener treats every unlock as a pause. Modal unlocks
-  // are intentional, so intercept those events before the core non-capture listener
-  // can place the pause screen over the popover.
+  // UI-producing E interactions are special: building a dialog and then exiting
+  // Pointer Lock from the same keydown can wedge Chromium/WebKit. Release first,
+  // suppress the normal pause transition, then invoke only the captured UI action on
+  // the next task. Physical interactions are never intercepted and continue through
+  // the shared interaction-experience gesture queue unchanged.
+  document.addEventListener('keydown', (event) => {
+    if (event.code !== 'KeyE' || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (TV.state.modalOpen || modalUIVisible()) return;
+    preflightUIInteraction(event, TV.state.nearestInteractable);
+  }, true);
+
+  // The core pointerlockchange listener treats every unlock as a pause. Modal and UI
+  // preflight unlocks are intentional, so intercept them before the core listener.
   document.addEventListener('pointerlockchange', (event) => {
     if (TV.DEVICE.touch) return;
     if (gamePointerLocked()) return;
-    if (TV.state.modalOpen || modalUIVisible()) {
+    if (interactionPreflight || TV.state.modalOpen || modalUIVisible()) {
       resumeAfterModal = Boolean(TV.state.started);
       hidePause();
       event.stopImmediatePropagation();
     }
   }, true);
 
-  function revealResumeAfterModal() {
-    if (!resumeAfterModal || TV.DEVICE.touch || !TV.state.started) return;
-    if (TV.state.modalOpen || modalUIVisible() || gamePointerLocked()) return;
-    pauseScreen?.classList.remove('hidden');
-    resumeAfterModal = false;
-  }
-
-  // Fallback for browsers with unusual Pointer Lock timing: once a modal mutation is
-  // observable, independently ensure the canvas is unlocked. The release remains
-  // deferred so mutation delivery can never re-enter the keydown interaction stack.
+  // Fallback for programmatic modal opens and unusual Pointer Lock timing.
   const observer = new MutationObserver(() => {
     if (TV.state.modalOpen || modalUIVisible()) releaseModalPointerLock(document);
     queueMicrotask(revealResumeAfterModal);
@@ -102,9 +156,12 @@
     pointerCapture: captureGuarded,
     modalExitDeferred,
     modalPauseSuppression: true,
+    modalInteractionPreflight: true,
     explicitResumeAfterModal: true,
     modalVisible: modalUIVisible,
     resumePending: () => resumeAfterModal,
+    preflightActive: () => interactionPreflight,
+    interactionOpensModal,
     forceModalRelease: () => releaseModalPointerLock(document)
   });
 
