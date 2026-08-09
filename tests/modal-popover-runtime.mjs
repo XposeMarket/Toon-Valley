@@ -26,7 +26,7 @@ await page.addInitScript(() => {
     writable: true,
     value: function requestPointerLock() {
       document.__tvTestPointerLock = this;
-      document.dispatchEvent(new Event('pointerlockchange'));
+      setTimeout(() => document.dispatchEvent(new Event('pointerlockchange')), 0);
       return Promise.resolve();
     }
   });
@@ -35,7 +35,7 @@ await page.addInitScript(() => {
     writable: true,
     value: function exitPointerLock() {
       this.__tvTestPointerLock = null;
-      this.dispatchEvent(new Event('pointerlockchange'));
+      setTimeout(() => this.dispatchEvent(new Event('pointerlockchange')), 0);
     }
   });
 });
