@@ -54,10 +54,6 @@ async function requireGamePointerLock(label) {
 }
 
 async function requireReleasedForModal(label) {
-  await page.waitForFunction(() => window.__tvModalActionResult?.finished === true, null, { timeout: 6000 });
-  const actionResult = await page.evaluate(() => window.__tvModalActionResult);
-  if (actionResult.error) throw new Error(`${label}: registered interaction action threw: ${actionResult.error}`);
-  if (!actionResult.overlay) throw new Error(`${label}: registered interaction returned without creating .life-overlay: ${JSON.stringify(actionResult)}`);
   await page.waitForSelector('.life-overlay', { timeout: 6000 });
   await page.waitForFunction(() => !document.pointerLockElement && window.ToonValley.state.modalOpen === true, null, { timeout: 6000 });
   const state = await page.evaluate(() => ({
@@ -115,29 +111,15 @@ try {
     TV.player.position.set(x, TV.terrainHeight(x, z), z);
     TV.playerVelocity.set(0, 0, 0);
     TV.state.cameraReady = false;
-    window.__tvModalTestInteraction = interaction;
     return { prompt: interaction.prompt, x, z, actionSource: String(interaction.action).slice(0, 240) };
   });
   await page.waitForFunction((prompt) => document.getElementById('interaction-prompt')?.textContent.includes(prompt), npcTarget.prompt, { timeout: 6000 });
   checkpoint(`real prompt ready: ${npcTarget.prompt} :: ${npcTarget.actionSource}`);
 
-  await page.evaluate(() => {
-    window.__tvModalActionResult = { started: false, finished: false, overlay: false, modalOpen: false, error: null };
-    setTimeout(() => {
-      window.__tvModalActionResult.started = true;
-      try {
-        window.__tvModalTestInteraction.action();
-      } catch (error) {
-        window.__tvModalActionResult.error = String(error?.stack || error);
-      } finally {
-        window.__tvModalActionResult.overlay = Boolean(document.querySelector('.life-overlay'));
-        window.__tvModalActionResult.modalOpen = Boolean(window.ToonValley.state.modalOpen);
-        window.__tvModalActionResult.finished = true;
-      }
-    }, 0);
-  });
+  // Exercise the exact desktop player path instead of directly invoking the action.
+  await page.keyboard.press('KeyE');
   await requireReleasedForModal(npcTarget.prompt);
-  checkpoint('registered NPC interaction opened popover and released Pointer Lock safely');
+  checkpoint('real E interaction opened NPC popover and released Pointer Lock safely');
   await closeResumeAndRequireGameplay(npcTarget.prompt);
 
   await page.evaluate(() => {
