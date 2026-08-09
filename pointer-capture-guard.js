@@ -27,6 +27,7 @@
   let interactionUnlockPending = false;
   let pendingModalAction = null;
   let unlockTimer = 0;
+  let unlockCompletionTimer = 0;
   let modalUnlocksSuppressed = 0;
 
   const gamePointerLocked = () => Boolean(TV.renderer?.domElement && document.pointerLockElement === TV.renderer.domElement);
@@ -49,11 +50,31 @@
   function completeObservedUnlock() {
     if (!interactionUnlockPending || gamePointerLocked()) return false;
     interactionUnlockPending = false;
+    clearTimeout(unlockCompletionTimer);
+    unlockCompletionTimer = 0;
     modalUnlocksSuppressed++;
     armResumeAfterModal();
     hidePause();
     releasePendingAction();
     return true;
+  }
+
+  function watchForUnlock(attempt = 0) {
+    clearTimeout(unlockCompletionTimer);
+    unlockCompletionTimer = setTimeout(() => {
+      unlockCompletionTimer = 0;
+      if (!interactionUnlockPending) return;
+      if (!gamePointerLocked()) {
+        completeObservedUnlock();
+        return;
+      }
+      if (attempt < 30) watchForUnlock(attempt + 1);
+      else {
+        interactionUnlockPending = false;
+        pendingModalAction = null;
+        console.error('Pointer Lock did not release before modal interaction');
+      }
+    }, attempt === 0 ? 0 : 16);
   }
 
   function prepareModalInteraction(action) {
@@ -62,15 +83,17 @@
     interactionUnlockPending = true;
     armResumeAfterModal();
     clearTimeout(unlockTimer);
+    clearTimeout(unlockCompletionTimer);
     if (gamePointerLocked()) {
       // Exit on a separate task so native Pointer Lock never transitions inside
-      // the E-key event stack. The document pointerlockchange signal below owns
-      // the completion handoff and queues the modal only after the event unwinds.
+      // the E-key event stack. The document pointerlockchange signal is preferred,
+      // while a short polling fallback handles browsers/runners that update
+      // pointerLockElement without delivering that event reliably.
       unlockTimer = setTimeout(() => {
         unlockTimer = 0;
         try {
           if (gamePointerLocked()) document.exitPointerLock();
-          else completeObservedUnlock();
+          if (!completeObservedUnlock()) watchForUnlock();
         } catch (error) {
           interactionUnlockPending = false;
           pendingModalAction = null;
@@ -98,7 +121,8 @@
 
   // pointerlockchange is a Document event. Let the core listener update its normal
   // pause state first, then repair intentional modal unlocks in the same event turn
-  // before paint. This avoids depending on cross-target capture ordering.
+  // before paint. The polling fallback above guarantees the handoff even if a
+  // browser updates pointerLockElement without dispatching this event.
   document.addEventListener('pointerlockchange', () => {
     if (TV.DEVICE.touch || gamePointerLocked()) return;
     if (interactionUnlockPending || TV.state.modalOpen || modalUIVisible()) {
@@ -124,6 +148,7 @@
     preflightModalUnlock: true,
     deferredPointerLockExit: true,
     documentUnlockHandoff: true,
+    unlockPollingFallback: true,
     ownsModalActionHandoff: true,
     modalVisible: modalUIVisible,
     prepareModalInteraction,
