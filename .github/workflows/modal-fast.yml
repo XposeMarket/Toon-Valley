@@ -21,4 +21,4 @@ jobs:
       - run: |
           npm install --no-save playwright@1.55.0
           npx playwright install --with-deps chromium
-      - run: timeout 150s node tests/modal-popover-runtime.mjs
+      - run: HEADED=1 xvfb-run -a timeout 150s node tests/modal-popover-runtime.mjs
