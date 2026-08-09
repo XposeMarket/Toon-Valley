@@ -10,12 +10,10 @@
   let schedules = 0;
   let attempts = 0;
   let dispatches = 0;
-  let wrappedCount = 0;
+  let interceptions = 0;
   let lastPrompt = null;
   let lastError = null;
   let lastDrop = null;
-  const wrapped = new WeakMap();
-  const installed = new WeakSet();
 
   const opensModalUI = (interaction) => {
     const prompt = interaction?.prompt || '';
@@ -27,34 +25,16 @@
       prompt === 'Ask about town' ||
       prompt === 'Browse furniture catalog' ||
       prompt === 'Open decorating menu' ||
+      prompt === 'Buy ticket / see a film' ||
+      prompt === 'Choose a short film' ||
       /^Talk to /.test(prompt);
   };
 
   const canRun = (interaction) => TV.state.started &&
     !TV.state.modalOpen &&
     interaction?.area === TV.state.area &&
+    typeof interaction.action === 'function' &&
     (!interaction.enabled || interaction.enabled());
-  const canDefer = (interaction) => !TV.DEVICE.touch && canRun(interaction);
-
-  function unwrapAction(action) {
-    const seen = new Set();
-    let current = action;
-    while (typeof current === 'function' && current.__toonValleyModalSafeWrapper && current.__toonValleyOriginalAction) {
-      if (seen.has(current)) throw new Error('Detected recursive Toon Valley modal interaction wrapper');
-      seen.add(current);
-      current = current.__toonValleyOriginalAction;
-    }
-    return current;
-  }
-
-  function runOriginal(interaction, original, args) {
-    const target = unwrapAction(original);
-    if (typeof target !== 'function') {
-      lastDrop = 'dispatch-missing-original';
-      return undefined;
-    }
-    return target.apply(interaction, args);
-  }
 
   function executeRequest(request) {
     if (pendingRequest !== request) return;
@@ -62,7 +42,7 @@
     pendingTimer = 0;
     pendingRequest = null;
     attempts++;
-    const { interaction, original, args } = request;
+    const { interaction } = request;
     if (!canRun(interaction)) {
       lastDrop = 'dispatch-no-longer-valid';
       return;
@@ -72,10 +52,10 @@
     lastError = null;
     lastDrop = null;
     try {
-      runOriginal(interaction, original, args);
+      interaction.action();
     } catch (error) {
       lastError = String(error?.stack || error?.message || error);
-      console.error('Toon Valley deferred interaction failed', error);
+      console.error('Toon Valley deferred modal interaction failed', error);
     }
   }
 
@@ -83,7 +63,7 @@
     if (pendingRequest !== request) return;
     pendingTimer = 0;
     const { interaction } = request;
-    if (!canDefer(interaction)) {
+    if (!canRun(interaction)) {
       pendingRequest = null;
       lastDrop = 'unlock-no-longer-valid';
       return;
@@ -117,7 +97,7 @@
     const verifyUnlock = () => {
       pendingTimer = 0;
       if (pendingRequest !== request) { cleanup(); return; }
-      if (!canDefer(interaction)) {
+      if (!canRun(interaction)) {
         cleanup();
         pendingRequest = null;
         lastDrop = 'unlock-no-longer-valid';
@@ -143,68 +123,37 @@
     if (!finishIfUnlocked()) pendingTimer = setTimeout(verifyUnlock, 16);
   }
 
-  function schedule(interaction, original, args) {
+  function schedule(interaction) {
     clearTimeout(pendingTimer);
     schedules++;
-    const request = { id: ++requestSequence, interaction, original, args };
+    const request = { id: ++requestSequence, interaction };
     pendingRequest = request;
     lastPrompt = interaction.prompt || 'Interact';
     lastDrop = null;
     pendingTimer = setTimeout(() => beginPointerUnlock(request), 0);
   }
 
-  function wrapInteraction(interaction) {
-    if (!interaction || !opensModalUI(interaction) || typeof interaction.action !== 'function') return false;
+  document.addEventListener('keydown', (event) => {
+    if (event.code !== 'KeyE' || event.repeat || TV.DEVICE.touch || !TV.state.started || TV.state.modalOpen) return;
+    const interaction = TV.state.nearestInteractable;
+    if (!interaction || !opensModalUI(interaction) || !canRun(interaction)) return;
+    interceptions++;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    schedule(interaction);
+  }, true);
 
-    if (installed.has(interaction)) {
-      if (interaction.action === wrapped.get(interaction)) return false;
-      installed.delete(interaction);
-    }
-
-    let original;
-    try {
-      original = unwrapAction(interaction.action);
-    } catch (error) {
-      lastError = String(error?.stack || error?.message || error);
-      console.error('Toon Valley modal wrapper chain was invalid', error);
-      return false;
-    }
-    if (typeof original !== 'function') return false;
-
-    function modalSafeAction(...args) {
-      if (!canRun(interaction)) return undefined;
-      if (!canDefer(interaction) || document.pointerLockElement !== TV.renderer?.domElement) {
-        return runOriginal(interaction, original, args);
-      }
-      schedule(interaction, original, args);
-      return undefined;
-    }
-    modalSafeAction.__toonValleyModalSafeWrapper = true;
-    modalSafeAction.__toonValleyOriginalAction = original;
-    interaction.action = modalSafeAction;
-    wrapped.set(interaction, modalSafeAction);
-    installed.add(interaction);
-    wrappedCount++;
-    return true;
-  }
-
-  function scan() {
-    for (const interaction of TV.interactables) wrapInteraction(interaction);
-  }
-
-  scan();
-  let scanClock = 0;
-  TV.registerUpdateHook((dt) => {
-    scanClock += dt;
-    if (scanClock < 1) return;
-    scanClock = 0;
-    scan();
+  window.addEventListener('blur', () => {
+    if (!pendingRequest) return;
+    // Keep an already-scheduled modal handoff alive across the expected Pointer
+    // Lock focus transition. Only clear stale timers if no request is pending.
+    if (!pendingTimer) return;
   });
 
   window.ToonValleyDeferredInteractionDispatch = Object.freeze({
     active: true,
-    singleCoreKeyHandler: true,
-    actionWrapperArchitecture: true,
+    capturePhaseModalKeyGuard: true,
+    interceptsOnlyModalKeyE: true,
     executesAfterKeyboardEvent: true,
     releasesPointerLockBeforeUI: true,
     releasesPointerLockAfterKeyEvent: true,
@@ -212,7 +161,6 @@
     preservesPhysicalActionPath: true,
     touchModalSafety: true,
     queuedActionsSurviveBlur: true,
-    recursionGuard: true,
     observableUnlockPolling: true,
     eventDrivenUnlockHandoff: true,
     raceSafeSingleDispatch: true,
@@ -220,15 +168,15 @@
     pausesRenderWorkForModal: false,
     preModalRenderSuspension: false,
     pending: () => Boolean(pendingTimer || pendingRequest),
-    wrappedCount: () => wrappedCount,
+    interceptionCount: () => interceptions,
     scheduleCount: () => schedules,
     attemptCount: () => attempts,
     dispatchCount: () => dispatches,
     lastPrompt: () => lastPrompt,
     lastError: () => lastError,
     lastDrop: () => lastDrop,
-    scan
+    opensModalUI
   });
 
-  console.info('Toon Valley modal-safe interaction actions ready', { wrapped: wrappedCount });
+  console.info('Toon Valley capture-phase modal interaction handoff ready');
 })();
