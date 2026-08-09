@@ -27,7 +27,6 @@
   let interactionUnlockPending = false;
   let pendingModalAction = null;
   let unlockTimer = 0;
-  let observeTimer = 0;
   let modalUnlocksSuppressed = 0;
 
   const gamePointerLocked = () => Boolean(TV.renderer?.domElement && document.pointerLockElement === TV.renderer.domElement);
@@ -44,31 +43,17 @@
   function releasePendingAction() {
     const action = pendingModalAction;
     pendingModalAction = null;
-    if (typeof action === 'function') setTimeout(action, 0);
+    if (typeof action === 'function') queueMicrotask(action);
   }
 
   function completeObservedUnlock() {
     if (!interactionUnlockPending || gamePointerLocked()) return false;
     interactionUnlockPending = false;
-    clearTimeout(observeTimer);
-    observeTimer = 0;
     modalUnlocksSuppressed++;
     armResumeAfterModal();
     hidePause();
     releasePendingAction();
     return true;
-  }
-
-  function observeUnlock(startedAt) {
-    if (completeObservedUnlock()) return;
-    if (!interactionUnlockPending) return;
-    if (performance.now() - startedAt > 1800) {
-      interactionUnlockPending = false;
-      pendingModalAction = null;
-      console.error('Toon Valley modal interaction Pointer Lock release timed out');
-      return;
-    }
-    observeTimer = setTimeout(() => observeUnlock(startedAt), 12);
   }
 
   function prepareModalInteraction(action) {
@@ -77,14 +62,10 @@
     interactionUnlockPending = true;
     armResumeAfterModal();
     clearTimeout(unlockTimer);
-    clearTimeout(observeTimer);
     if (gamePointerLocked()) {
-      const startedAt = performance.now();
-      // Arm the observer before asking Chromium to exit Pointer Lock. In some
-      // WebGL/Pointer-Lock paths the native exit can abandon the remainder of the
-      // current task even though the page stays alive; pre-arming this callback
-      // guarantees the modal handoff survives that transition.
-      observeTimer = setTimeout(() => observeUnlock(startedAt), 12);
+      // Exit on a separate task so native Pointer Lock never transitions inside
+      // the E-key event stack. The document pointerlockchange signal below owns
+      // the completion handoff and queues the modal only after the event unwinds.
       unlockTimer = setTimeout(() => {
         unlockTimer = 0;
         try {
@@ -93,8 +74,6 @@
         } catch (error) {
           interactionUnlockPending = false;
           pendingModalAction = null;
-          clearTimeout(observeTimer);
-          observeTimer = 0;
           console.error('Unable to release Pointer Lock before modal interaction', error);
         }
       }, 0);
@@ -117,16 +96,19 @@
     resumeAfterModal = false;
   }
 
-  window.addEventListener('pointerlockchange', (event) => {
+  // pointerlockchange is a Document event. Let the core listener update its normal
+  // pause state first, then repair intentional modal unlocks in the same event turn
+  // before paint. This avoids depending on cross-target capture ordering.
+  document.addEventListener('pointerlockchange', () => {
     if (TV.DEVICE.touch || gamePointerLocked()) return;
     if (interactionUnlockPending || TV.state.modalOpen || modalUIVisible()) {
-      event.stopImmediatePropagation();
       if (!completeObservedUnlock()) {
         armResumeAfterModal();
         modalUnlocksSuppressed++;
       }
+      hidePause();
     }
-  }, true);
+  });
 
   const observer = new MutationObserver(() => queueMicrotask(revealResumeAfterModal));
   if (document.body) observer.observe(document.body, { childList: true, subtree: true });
@@ -141,8 +123,7 @@
     explicitResumeAfterModal: true,
     preflightModalUnlock: true,
     deferredPointerLockExit: true,
-    observedUnlockFallback: true,
-    prearmedUnlockObserver: true,
+    documentUnlockHandoff: true,
     ownsModalActionHandoff: true,
     modalVisible: modalUIVisible,
     prepareModalInteraction,
