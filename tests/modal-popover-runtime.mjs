@@ -46,6 +46,7 @@ async function diagnostics() {
       renderPaused: window.ToonValley?.state?.pausedByVisibility,
       webglSurfaceHidden: document.getElementById('game')?.style.display === 'none',
       overlay: Boolean(document.querySelector(selector)),
+      closeButton: Boolean(document.querySelector('.life-close,[data-close]')),
       pauseHidden: document.getElementById('pause-screen')?.classList.contains('hidden'),
       nearest: nearest?.prompt || null,
       nearestWrapped: Boolean(nearest?.action?.__toonValleyModalSafeWrapper),
@@ -106,30 +107,37 @@ async function openCurrentInteraction(label) {
   await page.waitForFunction((previous) => window.ToonValleyDeferredInteractionDispatch.scheduleCount() > previous, before.schedules, { timeout: 4000, polling: 50 });
   checkpoint(`${label} scheduled from real E input`);
 
-  // Gate on the player-visible result, not an internal counter. In headless
-  // Chromium the page can switch task scheduling domains while Pointer Lock exits;
-  // the DOM overlay and modal state are the behavior players actually rely on.
-  await page.locator(modalSelector).first().waitFor({ state: 'attached', timeout: 6000 });
-  await page.waitForFunction(() => window.ToonValley.state.modalOpen === true && !document.pointerLockElement, null, { timeout: 6000, polling: 50 });
-  checkpoint(`${label} overlay visible and Pointer Lock released`);
-
+  // Give the native Pointer Lock exit + deferred action a real browser task turn,
+  // then inspect the page's own DOM/state directly. Playwright locator watchers use
+  // an injected world that can be throttled while the game surface is intentionally
+  // suspended; the main-world state is the runtime players actually experience.
+  await wait(850);
   const state = await diagnostics();
   console.log(`[modal-popover] ${label} opened`, state);
   if (!state.dispatcher || state.dispatcher.wrapped < 2 || state.dispatcher.schedules <= before.schedules || state.dispatcher.attempts < 1 || state.dispatcher.dispatches <= before.dispatches || state.dispatcher.lastError || state.dispatcher.lastDrop) {
     throw new Error(`${label}: modal-safe action regression ${JSON.stringify(state)}`);
   }
-  if (!state.modalOpen || !state.renderPaused || !state.webglSurfaceHidden || !state.overlay || !state.pauseHidden || state.pointerLocked || !state.modalVisible || !state.resumePending || state.suppressedUnlocks < 1) {
+  if (!state.modalOpen || !state.renderPaused || !state.webglSurfaceHidden || !state.overlay || !state.closeButton || !state.pauseHidden || state.pointerLocked || !state.modalVisible || !state.resumePending || state.suppressedUnlocks < 1) {
     throw new Error(`${label}: modal Pointer Lock/render isolation regression ${JSON.stringify(state)}`);
   }
+  checkpoint(`${label} overlay stable and Pointer Lock released`);
 }
 
 async function closeCurrentModal(label) {
   checkpoint(`${label} closing`);
-  await page.locator('.life-close,[data-close]').first().click();
-  await page.waitForFunction((selector) => !document.querySelector(selector) && window.ToonValley.state.modalOpen === false, modalSelector, { timeout: 6000, polling: 50 });
-  checkpoint(`${label} closed`);
-  await page.waitForFunction(() => window.ToonValley.state.pausedByVisibility === false && document.getElementById('game')?.style.display !== 'none' && !document.getElementById('pause-screen').classList.contains('hidden'), null, { timeout: 6000, polling: 50 });
-  checkpoint(`${label} resume prompt visible`);
+  const clicked = await page.evaluate(() => {
+    const button = document.querySelector('.life-close,[data-close]');
+    if (!button) return false;
+    button.click();
+    return true;
+  });
+  if (!clicked) throw new Error(`${label}: close button disappeared before handoff`);
+  await wait(350);
+  const closed = await diagnostics();
+  if (closed.overlay || closed.modalOpen || closed.renderPaused || closed.webglSurfaceHidden || closed.pauseHidden) {
+    throw new Error(`${label}: modal did not restore game/resume state ${JSON.stringify(closed)}`);
+  }
+  checkpoint(`${label} closed with resume prompt visible`);
   await page.click('#resume-button');
   await requireGamePointerLock(`${label} resume`);
   checkpoint(`${label} resumed`);
