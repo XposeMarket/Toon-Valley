@@ -11,7 +11,8 @@ if (server) await wait(900);
 const dispatchSource = readFileSync(new URL('../interaction-deferred-dispatch.js', import.meta.url), 'utf8');
 if (!/dispatchNearestModal/.test(dispatchSource) || !/preservesPhysicalActionPath:\s*true/.test(dispatchSource)) throw new Error('Shared modal handoff invariant missing');
 if (/interaction\.action\s*=/.test(dispatchSource)) throw new Error('Modal safety must not mutate registered interaction actions');
-if (/pausedByVisibility\s*=\s*true|style\.display\s*=\s*['"]none['"]/.test(dispatchSource)) throw new Error('Modal safety must not freeze rendering');
+if (/style\.display\s*=\s*['"]none['"]/.test(dispatchSource)) throw new Error('Modal safety must not remove the WebGL surface');
+if (!/transientRenderQuiesce:\s*true/.test(dispatchSource) || !/preUnlockRenderQuiesce:\s*true/.test(dispatchSource)) throw new Error('Pointer Lock release must quiesce rendering only during the transition');
 
 const browser = await chromium.launch({ headless: true, args: ['--use-gl=swiftshader', '--enable-webgl'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 760 } });
@@ -38,6 +39,8 @@ async function state() {
       schedules: window.ToonValleyDeferredInteractionDispatch.scheduleCount(),
       attempts: window.ToonValleyDeferredInteractionDispatch.attemptCount(),
       dispatches: window.ToonValleyDeferredInteractionDispatch.dispatchCount(),
+      renderQuiesced: window.ToonValleyDeferredInteractionDispatch.renderQuiesced(),
+      quiesceCount: window.ToonValleyDeferredInteractionDispatch.quiesceCount(),
       lastError: window.ToonValleyDeferredInteractionDispatch.lastError(),
       lastDrop: window.ToonValleyDeferredInteractionDispatch.lastDrop()
     } : null
@@ -72,7 +75,7 @@ async function cycle(label) {
   await page.waitForFunction(selector => window.ToonValley.state.modalOpen && Boolean(document.querySelector(selector)), modalSelector, { timeout: 6000 });
   const opened = await state();
   if (opened.locked || !opened.modalOpen || !opened.overlay || !opened.pauseHidden || opened.renderPaused || !opened.resumePending || !opened.modalVisible || opened.suppressedUnlocks < 1) throw new Error(`${label}: bad open state ${JSON.stringify(opened)}`);
-  if (!opened.d || opened.d.dispatches <= before.d.dispatches || opened.d.attempts < 1 || opened.d.lastError || opened.d.lastDrop) throw new Error(`${label}: dispatcher failed ${JSON.stringify(opened.d)}`);
+  if (!opened.d || opened.d.dispatches <= before.d.dispatches || opened.d.attempts < 1 || opened.d.lastError || opened.d.lastDrop || opened.d.renderQuiesced || opened.d.quiesceCount <= before.d.quiesceCount) throw new Error(`${label}: dispatcher failed ${JSON.stringify(opened.d)}`);
   const frameA = await page.evaluate(() => window.ToonValley.renderer.info.render.frame);
   await wait(250);
   const frameB = await page.evaluate(() => window.ToonValley.renderer.info.render.frame);
@@ -83,7 +86,7 @@ async function cycle(label) {
   if (!clicked) throw new Error(`${label}: close button missing`);
   await page.waitForFunction(selector => !window.ToonValley.state.modalOpen && !document.querySelector(selector), modalSelector, { timeout: 4000 });
   const closed = await state();
-  if (closed.modalOpen || closed.overlay || closed.pauseHidden || closed.renderPaused) throw new Error(`${label}: bad close state ${JSON.stringify(closed)}`);
+  if (closed.modalOpen || closed.overlay || closed.pauseHidden || closed.renderPaused || closed.d.renderQuiesced) throw new Error(`${label}: bad close state ${JSON.stringify(closed)}`);
   await page.locator('#resume-button').click({ noWaitAfter: true });
   await lock(`${label} resume`);
 }
@@ -98,6 +101,8 @@ try {
     liveRender: window.ToonValleyPointerGuard.keepsRenderWorkDuringModal,
     surface: window.ToonValleyPointerGuard.keepsWebGLSurfaceDuringModal,
     shared: window.ToonValleyDeferredInteractionDispatch.sharedModalHandoff,
+    transientQuiesce: window.ToonValleyDeferredInteractionDispatch.transientRenderQuiesce,
+    preUnlockQuiesce: window.ToonValleyDeferredInteractionDispatch.preUnlockRenderQuiesce,
     preserveActions: window.ToonValleyDeferredInteractionDispatch.preservesInteractionActions,
     preservePhysical: window.ToonValleyDeferredInteractionDispatch.preservesPhysicalActionPath,
     gpuSafe: window.ToonValleyUILayerFix.gpuSafePopoverCompositing
