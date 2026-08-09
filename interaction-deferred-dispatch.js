@@ -69,7 +69,13 @@
     try {
       console.info('[modal-dispatch] target-before', lastPrompt);
       target.apply(interaction, args);
-      console.info('[modal-dispatch] target-after', lastPrompt, { modalOpen: TV.state.modalOpen, overlay: Boolean(document.querySelector('.life-overlay,.ohx,.mb-overlay,#build-controls,#ohbuild,#bl-controls')) });
+      if (TV.state.modalOpen) {
+        // A popover must stop the 3D/update workload completely. Gameplay input was
+        // already paused, but extension hooks and WebGL rendering could keep running
+        // behind the DOM and starve the main thread on low-power/mobile GPUs.
+        TV.state.pausedByVisibility = true;
+      }
+      console.info('[modal-dispatch] target-after', lastPrompt, { modalOpen: TV.state.modalOpen, overlay: Boolean(document.querySelector('.life-overlay,.ohx,.mb-overlay,#build-controls,#ohbuild,#bl-controls')), renderPaused: TV.state.pausedByVisibility });
     } catch (error) {
       lastError = String(error?.stack || error?.message || error);
       console.error('Toon Valley deferred interaction failed', error);
@@ -193,6 +199,7 @@
     queuedActionsSurviveBlur: true,
     recursionGuard: true,
     observableUnlockPolling: true,
+    pausesRenderWorkForModal: true,
     pending: () => Boolean(pendingTimer || pendingUnlock),
     wrappedCount: () => wrappedCount,
     scheduleCount: () => schedules,
