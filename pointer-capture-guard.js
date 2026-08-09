@@ -24,10 +24,7 @@
   const modalSelector = '.life-overlay,.mb-overlay,.ohx,#build-controls,#ohbuild,#bl-controls';
   const pauseScreen = document.getElementById('pause-screen');
   let resumeAfterModal = false;
-  let interactionUnlockPending = false;
-  let pendingModalAction = null;
-  let unlockTimer = 0;
-  let unlockCompletionTimer = 0;
+  let modalExitPending = false;
   let modalUnlocksSuppressed = 0;
 
   const gamePointerLocked = () => Boolean(TV.renderer?.domElement && document.pointerLockElement === TV.renderer.domElement);
@@ -41,100 +38,55 @@
     queueMicrotask(hidePause);
   }
 
-  function releasePendingAction() {
-    const action = pendingModalAction;
-    pendingModalAction = null;
-    // Never construct modal DOM from the pointerlockchange/microtask turn itself.
-    // Chromium can deadlock if Pointer Lock teardown and focusable modal creation
-    // overlap. The next task runs only after the native unlock event has settled.
-    if (typeof action === 'function') setTimeout(action, 0);
-  }
-
-  function completeObservedUnlock() {
-    if (!interactionUnlockPending || gamePointerLocked()) return false;
-    interactionUnlockPending = false;
-    clearTimeout(unlockCompletionTimer);
-    unlockCompletionTimer = 0;
-    modalUnlocksSuppressed++;
-    armResumeAfterModal();
-    hidePause();
-    releasePendingAction();
-    return true;
-  }
-
-  function watchForUnlock(attempt = 0) {
-    clearTimeout(unlockCompletionTimer);
-    unlockCompletionTimer = setTimeout(() => {
-      unlockCompletionTimer = 0;
-      if (!interactionUnlockPending) return;
-      if (!gamePointerLocked()) {
-        completeObservedUnlock();
-        return;
-      }
-      if (attempt < 30) watchForUnlock(attempt + 1);
-      else {
-        interactionUnlockPending = false;
-        pendingModalAction = null;
-        console.error('Pointer Lock did not release before modal interaction');
-      }
-    }, attempt === 0 ? 0 : 16);
-  }
-
-  function prepareModalInteraction(action) {
-    if (TV.DEVICE.touch || !TV.state.started) return false;
-    pendingModalAction = typeof action === 'function' ? action : null;
-    interactionUnlockPending = true;
-    armResumeAfterModal();
-    clearTimeout(unlockTimer);
-    clearTimeout(unlockCompletionTimer);
-    if (gamePointerLocked()) {
-      // Exit on a separate task so native Pointer Lock never transitions inside
-      // the E-key event stack. The document pointerlockchange signal is preferred,
-      // while a short polling fallback handles browsers/runners that update
-      // pointerLockElement without delivering that event reliably.
-      unlockTimer = setTimeout(() => {
-        unlockTimer = 0;
+  // Life/shop/phone overlays already construct their DOM and mark modalOpen before
+  // calling document.exitPointerLock(). Defer only that modal-owned release until
+  // the current interaction task has returned. This avoids both known failure modes:
+  // unlocking before modal construction (Chromium focus deadlock) and releasing
+  // Pointer Lock synchronously while the E-key interaction stack is still active.
+  const documentProto = globalThis.Document?.prototype;
+  const nativeExit = documentProto?.exitPointerLock;
+  let modalExitGuarded = Boolean(nativeExit?.__toonValleyModalFirstGuarded);
+  if (documentProto && typeof nativeExit === 'function' && !modalExitGuarded) {
+    function guardedExitPointerLock() {
+      const modalOwned = Boolean(TV.state.modalOpen || modalUIVisible());
+      if (!modalOwned) return nativeExit.call(this);
+      const doc = this;
+      armResumeAfterModal();
+      if (modalExitPending) return undefined;
+      modalExitPending = true;
+      setTimeout(() => {
         try {
-          if (gamePointerLocked()) document.exitPointerLock();
-          if (!completeObservedUnlock()) watchForUnlock();
+          if (doc.pointerLockElement) nativeExit.call(doc);
+          else modalExitPending = false;
         } catch (error) {
-          interactionUnlockPending = false;
-          pendingModalAction = null;
-          console.error('Unable to release Pointer Lock before modal interaction', error);
+          modalExitPending = false;
+          console.error('Deferred modal Pointer Lock release failed', error);
         }
       }, 0);
-      return true;
+      return undefined;
     }
-    interactionUnlockPending = false;
-    releasePendingAction();
-    return false;
+    guardedExitPointerLock.__toonValleyModalFirstGuarded = true;
+    documentProto.exitPointerLock = guardedExitPointerLock;
+    modalExitGuarded = true;
   }
 
-  function modalInteractionReady() {
-    if (!gamePointerLocked()) completeObservedUnlock();
-    return !gamePointerLocked() && !interactionUnlockPending;
-  }
+  document.addEventListener('pointerlockchange', () => {
+    if (TV.DEVICE.touch || gamePointerLocked()) return;
+    if (modalExitPending || TV.state.modalOpen || modalUIVisible() || resumeAfterModal) {
+      modalExitPending = false;
+      modalUnlocksSuppressed++;
+      armResumeAfterModal();
+      hidePause();
+      queueMicrotask(hidePause);
+    }
+  });
 
   function revealResumeAfterModal() {
     if (!resumeAfterModal || TV.DEVICE.touch || !TV.state.started) return;
-    if (TV.state.modalOpen || modalUIVisible() || gamePointerLocked() || interactionUnlockPending) return;
+    if (TV.state.modalOpen || modalUIVisible() || gamePointerLocked() || modalExitPending) return;
     pauseScreen?.classList.remove('hidden');
     resumeAfterModal = false;
   }
-
-  // pointerlockchange is a Document event. Let the core listener update its normal
-  // pause state first, then repair intentional modal unlocks in the same event turn.
-  // Modal construction itself is deferred to the following task by releasePendingAction.
-  document.addEventListener('pointerlockchange', () => {
-    if (TV.DEVICE.touch || gamePointerLocked()) return;
-    if (interactionUnlockPending || TV.state.modalOpen || modalUIVisible()) {
-      if (!completeObservedUnlock()) {
-        armResumeAfterModal();
-        modalUnlocksSuppressed++;
-      }
-      hidePause();
-    }
-  });
 
   const observer = new MutationObserver(() => queueMicrotask(revealResumeAfterModal));
   if (document.body) observer.observe(document.body, { childList: true, subtree: true });
@@ -144,22 +96,16 @@
   window.ToonValleyPointerGuard = Object.freeze({
     active: captureGuarded,
     pointerCapture: captureGuarded,
+    modalExit: modalExitGuarded,
+    modalFirstLifecycle: true,
+    deferredPointerLockExit: true,
     modalPauseSuppression: true,
     consumesModalPointerLockChange: true,
     explicitResumeAfterModal: true,
-    preflightModalUnlock: true,
-    deferredPointerLockExit: true,
-    deferredModalConstruction: true,
-    documentUnlockHandoff: true,
-    unlockPollingFallback: true,
-    ownsModalActionHandoff: true,
     modalVisible: modalUIVisible,
-    prepareModalInteraction,
-    modalInteractionReady,
     armResumeAfterModal,
     resumePending: () => resumeAfterModal,
-    interactionUnlockPending: () => interactionUnlockPending,
-    modalActionPending: () => Boolean(pendingModalAction),
+    modalExitPending: () => modalExitPending,
     suppressedModalUnlocks: () => modalUnlocksSuppressed
   });
 
