@@ -15,6 +15,9 @@ if (/addEventListener\(\s*['"]key(?:down|up)['"]/.test(dispatchSource) || /stopI
 if (!/interaction\.action\s*=\s*modalSafeAction/.test(dispatchSource)) {
   throw new Error('Modal safety must wrap interaction actions instead of owning KeyE');
 }
+if (/pausedByVisibility\s*=\s*true|style\.display\s*=\s*['"]none['"]/.test(dispatchSource)) {
+  throw new Error('Modal dispatch must not freeze the game loop or remove the WebGL surface');
+}
 
 const browser = await chromium.launch({ headless: true, args: ['--use-gl=swiftshader', '--enable-webgl'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 760 } });
@@ -23,13 +26,8 @@ page.setDefaultNavigationTimeout(45000);
 
 const errors = [];
 page.on('pageerror', (error) => errors.push(`pageerror: ${error.stack || error.message}`));
-page.on('console', (message) => {
-  const text = message.text();
-  if (text.startsWith('[modal-dispatch]')) console.log(`[browser] ${text}`);
-  if (message.type() === 'error') errors.push(`console: ${text}`);
-});
+page.on('console', (message) => { if (message.type() === 'error') errors.push(`console: ${message.text()}`); });
 page.on('crash', () => errors.push('page crash: Chromium renderer process crashed'));
-const checkpoint = (label) => console.log(`[modal-popover] ${label}`);
 const modalSelector = '.life-overlay,.ohx,.mb-overlay,#build-controls,#ohbuild,#bl-controls';
 const watchdog = setTimeout(() => {
   console.error('[modal-popover] watchdog: browser interaction stopped responding for 40 seconds');
@@ -50,7 +48,6 @@ async function diagnostics() {
       pauseHidden: document.getElementById('pause-screen')?.classList.contains('hidden'),
       nearest: nearest?.prompt || null,
       nearestWrapped: Boolean(nearest?.action?.__toonValleyModalSafeWrapper),
-      nearestHasOriginal: Boolean(nearest?.action?.__toonValleyOriginalAction),
       area: window.ToonValley?.state?.area,
       modalVisible: window.ToonValleyPointerGuard?.modalVisible?.(),
       resumePending: window.ToonValleyPointerGuard?.resumePending?.(),
@@ -61,7 +58,6 @@ async function diagnostics() {
         schedules: window.ToonValleyDeferredInteractionDispatch.scheduleCount(),
         attempts: window.ToonValleyDeferredInteractionDispatch.attemptCount(),
         dispatches: window.ToonValleyDeferredInteractionDispatch.dispatchCount(),
-        lastPrompt: window.ToonValleyDeferredInteractionDispatch.lastPrompt(),
         lastError: window.ToonValleyDeferredInteractionDispatch.lastError(),
         lastDrop: window.ToonValleyDeferredInteractionDispatch.lastDrop()
       } : null
@@ -93,7 +89,6 @@ async function moveToInteraction(area, prompt) {
   await page.waitForFunction((prompt) => window.ToonValley.state.nearestInteractable?.prompt === prompt, prompt, { timeout: 6000, polling: 50 });
   await page.evaluate(() => window.ToonValleyDeferredInteractionDispatch.scan());
   const state = await diagnostics();
-  console.log(`[modal-popover] ${prompt} preflight`, state);
   if (!state.nearestWrapped) throw new Error(`${prompt}: nearest interaction was not modal-safe wrapped ${JSON.stringify(state)}`);
 }
 
@@ -102,29 +97,24 @@ async function openCurrentInteraction(label) {
     schedules: window.ToonValleyDeferredInteractionDispatch.scheduleCount(),
     dispatches: window.ToonValleyDeferredInteractionDispatch.dispatchCount()
   }));
-
   await page.keyboard.press('e');
   await page.waitForFunction((previous) => window.ToonValleyDeferredInteractionDispatch.scheduleCount() > previous, before.schedules, { timeout: 4000, polling: 50 });
-  checkpoint(`${label} scheduled from real E input`);
-
-  // Give the native Pointer Lock exit + deferred action a real browser task turn,
-  // then inspect the page's own DOM/state directly. Playwright locator watchers use
-  // an injected world that can be throttled while the game surface is intentionally
-  // suspended; the main-world state is the runtime players actually experience.
-  await wait(850);
+  await page.waitForFunction((selector) => window.ToonValley.state.modalOpen && Boolean(document.querySelector(selector)), modalSelector, { timeout: 6000, polling: 50 });
   const state = await diagnostics();
-  console.log(`[modal-popover] ${label} opened`, state);
   if (!state.dispatcher || state.dispatcher.wrapped < 2 || state.dispatcher.schedules <= before.schedules || state.dispatcher.attempts < 1 || state.dispatcher.dispatches <= before.dispatches || state.dispatcher.lastError || state.dispatcher.lastDrop) {
     throw new Error(`${label}: modal-safe action regression ${JSON.stringify(state)}`);
   }
-  if (!state.modalOpen || !state.renderPaused || !state.webglSurfaceHidden || !state.overlay || !state.closeButton || !state.pauseHidden || state.pointerLocked || !state.modalVisible || !state.resumePending || state.suppressedUnlocks < 1) {
-    throw new Error(`${label}: modal Pointer Lock/render isolation regression ${JSON.stringify(state)}`);
+  if (!state.modalOpen || state.renderPaused || state.webglSurfaceHidden || !state.overlay || !state.closeButton || !state.pauseHidden || state.pointerLocked || !state.modalVisible || !state.resumePending || state.suppressedUnlocks < 1) {
+    throw new Error(`${label}: modal Pointer Lock/live-render regression ${JSON.stringify(state)}`);
   }
-  checkpoint(`${label} overlay stable and Pointer Lock released`);
+  // Prove the renderer/main world remains responsive while the popover is open.
+  const frameA = await page.evaluate(() => window.ToonValley.renderer.info.render.frame);
+  await wait(250);
+  const frameB = await page.evaluate(() => window.ToonValley.renderer.info.render.frame);
+  if (frameB <= frameA) throw new Error(`${label}: renderer stopped advancing while modal was open (${frameA} -> ${frameB})`);
 }
 
 async function closeCurrentModal(label) {
-  checkpoint(`${label} closing`);
   const clicked = await page.evaluate(() => {
     const button = document.querySelector('.life-close,[data-close]');
     if (!button) return false;
@@ -132,29 +122,24 @@ async function closeCurrentModal(label) {
     return true;
   });
   if (!clicked) throw new Error(`${label}: close button disappeared before handoff`);
-  await wait(350);
+  await page.waitForFunction((selector) => !window.ToonValley.state.modalOpen && !document.querySelector(selector), modalSelector, { timeout: 4000, polling: 50 });
   const closed = await diagnostics();
   if (closed.overlay || closed.modalOpen || closed.renderPaused || closed.webglSurfaceHidden || closed.pauseHidden) {
-    throw new Error(`${label}: modal did not restore game/resume state ${JSON.stringify(closed)}`);
+    throw new Error(`${label}: modal did not restore resume state ${JSON.stringify(closed)}`);
   }
-  checkpoint(`${label} closed with resume prompt visible`);
   await page.click('#resume-button');
   await requireGamePointerLock(`${label} resume`);
-  checkpoint(`${label} resumed`);
 }
 
 try {
   await page.goto(remoteURL || 'http://127.0.0.1:4191', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.ToonValley && window.ToonValleyLife && window.ToonValleyPointerGuard && window.ToonValleyDeferredInteractionDispatch && window.ToonValleyUILayerFix, null, { timeout: 30000, polling: 50 });
-  checkpoint('game globals ready with native Pointer Lock APIs');
-
   const capabilities = await page.evaluate(() => ({
     nativeModalExit: window.ToonValleyPointerGuard.nativeModalExit,
     modalPauseSuppression: window.ToonValleyPointerGuard.modalPauseSuppression,
     explicitResumeAfterModal: window.ToonValleyPointerGuard.explicitResumeAfterModal,
-    suspendsRenderWorkForModal: window.ToonValleyPointerGuard.suspendsRenderWorkForModal,
-    preModalRenderSuspension: window.ToonValleyPointerGuard.preModalRenderSuspension,
-    removesWebGLSurfaceDuringModal: window.ToonValleyPointerGuard.removesWebGLSurfaceDuringModal,
+    keepsRenderWorkDuringModal: window.ToonValleyPointerGuard.keepsRenderWorkDuringModal,
+    keepsWebGLSurfaceDuringModal: window.ToonValleyPointerGuard.keepsWebGLSurfaceDuringModal,
     singleCoreKeyHandler: window.ToonValleyDeferredInteractionDispatch.singleCoreKeyHandler,
     actionWrapperArchitecture: window.ToonValleyDeferredInteractionDispatch.actionWrapperArchitecture,
     executesAfterKeyboardEvent: window.ToonValleyDeferredInteractionDispatch.executesAfterKeyboardEvent,
@@ -164,7 +149,7 @@ try {
     touchModalSafety: window.ToonValleyDeferredInteractionDispatch.touchModalSafety,
     recursionGuard: window.ToonValleyDeferredInteractionDispatch.recursionGuard,
     observableUnlockPolling: window.ToonValleyDeferredInteractionDispatch.observableUnlockPolling,
-    pausesRenderWorkForModal: window.ToonValleyDeferredInteractionDispatch.pausesRenderWorkForModal,
+    keepsRenderWorkDuringDispatch: window.ToonValleyDeferredInteractionDispatch.keepsRenderWorkDuringModal,
     gpuSafePopoverCompositing: window.ToonValleyUILayerFix.gpuSafePopoverCompositing
   }));
   if (!Object.values(capabilities).every(Boolean)) throw new Error(`Missing modal/input capabilities ${JSON.stringify(capabilities)}`);
@@ -172,18 +157,15 @@ try {
   await page.click('#play-button');
   await page.waitForFunction(() => window.ToonValley.state.started === true, null, { timeout: 6000, polling: 50 });
   await requireGamePointerLock('initial play');
-  checkpoint('real game Pointer Lock state active');
 
   await moveToInteraction('furnitureStore', 'Browse furniture catalog');
   await requireGamePointerLock('furniture precondition');
   await openCurrentInteraction('furniture catalog');
-  checkpoint('furniture catalog popover stable');
   await closeCurrentModal('furniture catalog');
 
   await moveToInteraction('generalStore', 'Browse counter');
   await requireGamePointerLock('store precondition');
   await openCurrentInteraction('general store counter');
-  checkpoint('general store popover stable');
   await closeCurrentModal('general store counter');
 
   if (errors.length) throw new Error(errors.join('\n'));
