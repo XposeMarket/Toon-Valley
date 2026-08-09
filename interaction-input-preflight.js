@@ -17,24 +17,16 @@
   const gamePointerLocked = () => document.pointerLockElement === TV.renderer?.domElement;
   const modalVisible = () => Boolean(window.ToonValleyPointerGuard?.modalVisible?.() || document.querySelector('.life-overlay,.mb-overlay,.ohx,#build-controls,#ohbuild,#bl-controls'));
 
-  function worldPosition(item) {
-    if (!item.object) return { x: item.x, z: item.z };
-    if (typeof item.object.getWorldPosition === 'function' && TV.THREE?.Vector3) {
-      const point = new TV.THREE.Vector3();
-      item.object.getWorldPosition(point);
-      return { x: point.x, z: point.z };
-    }
-    return { x: item.object.position.x, z: item.object.position.z };
-  }
-
   function nearestInteraction() {
+    if (TV.state.nearestInteractable && TV.state.nearestInteractable.area === TV.state.area) return TV.state.nearestInteractable;
     let nearest = null;
     let nearestDistance = Infinity;
     for (const item of TV.interactables || []) {
       if (item.area !== TV.state.area) continue;
       if (item.enabled && !item.enabled()) continue;
-      const point = worldPosition(item);
-      const distance = Math.hypot(TV.player.position.x - point.x, TV.player.position.z - point.z);
+      const ix = item.object ? item.object.position.x : item.x;
+      const iz = item.object ? item.object.position.z : item.z;
+      const distance = Math.hypot(TV.player.position.x - ix, TV.player.position.z - iz);
       if (distance < item.radius && distance < nearestDistance) {
         nearest = item;
         nearestDistance = distance;
