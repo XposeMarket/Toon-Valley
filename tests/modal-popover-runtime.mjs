@@ -41,13 +41,17 @@ async function state() {
     resumePending: window.ToonValleyPointerGuard?.resumePending?.(),
     modalVisible: window.ToonValleyPointerGuard?.modalVisible?.(),
     suppressedUnlocks: window.ToonValleyPointerGuard?.suppressedModalUnlocks?.(),
+    nearestPrompt: window.ToonValley?.state?.nearestInteractable?.prompt || null,
     d: window.ToonValleyDeferredInteractionDispatch ? {
       interceptions: window.ToonValleyDeferredInteractionDispatch.interceptionCount(),
       schedules: window.ToonValleyDeferredInteractionDispatch.scheduleCount(),
       attempts: window.ToonValleyDeferredInteractionDispatch.attemptCount(),
       dispatches: window.ToonValleyDeferredInteractionDispatch.dispatchCount(),
+      pending: window.ToonValleyDeferredInteractionDispatch.pending(),
+      handoffArmed: window.ToonValleyDeferredInteractionDispatch.handoffArmed?.() || false,
       renderQuiesced: window.ToonValleyDeferredInteractionDispatch.renderQuiesced(),
       canvasDetached: window.ToonValleyDeferredInteractionDispatch.canvasDetached(),
+      lastPrompt: window.ToonValleyDeferredInteractionDispatch.lastPrompt(),
       lastError: window.ToonValleyDeferredInteractionDispatch.lastError(),
       lastDrop: window.ToonValleyDeferredInteractionDispatch.lastDrop()
     } : null
@@ -78,11 +82,15 @@ async function move(area, prompt) {
 async function cycle(label) {
   const before = await state();
   const accepted = await page.evaluate(() => window.ToonValleyDeferredInteractionDispatch.dispatchNearestModal());
-  if (!accepted) throw new Error(`${label}: shared modal handoff rejected nearest interaction`);
-  await page.waitForFunction(selector => window.ToonValley.state.modalOpen && Boolean(document.querySelector(selector)), modalSelector, { timeout: 8000 });
+  if (!accepted) throw new Error(`${label}: shared modal handoff rejected nearest interaction ${JSON.stringify(await state())}`);
+  try {
+    await page.waitForFunction(selector => window.ToonValley.state.modalOpen && Boolean(document.querySelector(selector)), modalSelector, { timeout: 8000 });
+  } catch (error) {
+    throw new Error(`${label}: modal did not open after handoff ${JSON.stringify(await state())}${errors.length ? `\n${errors.join('\n')}` : ''}`, { cause: error });
+  }
   const opened = await state();
   if (opened.locked || !opened.modalOpen || !opened.overlay || !opened.pauseHidden || opened.renderPaused || opened.canvasVisibility === 'hidden' || !opened.resumePending || !opened.modalVisible || opened.suppressedUnlocks < 1) throw new Error(`${label}: bad open state ${JSON.stringify(opened)}`);
-  if (!opened.d || opened.d.dispatches <= before.d.dispatches || opened.d.attempts < 1 || opened.d.lastError || opened.d.lastDrop || opened.d.renderQuiesced || opened.d.canvasDetached) throw new Error(`${label}: dispatcher failed ${JSON.stringify(opened.d)}`);
+  if (!opened.d || opened.d.dispatches <= before.d.dispatches || opened.d.attempts < 1 || opened.d.lastError || opened.d.lastDrop || opened.d.renderQuiesced || opened.d.canvasDetached || opened.d.handoffArmed) throw new Error(`${label}: dispatcher failed ${JSON.stringify(opened.d)}`);
   const frameA = await page.evaluate(() => window.ToonValley.renderer.info.render.frame);
   await wait(250);
   const frameB = await page.evaluate(() => window.ToonValley.renderer.info.render.frame);
@@ -93,7 +101,7 @@ async function cycle(label) {
   if (!clicked) throw new Error(`${label}: close button missing`);
   await page.waitForFunction(selector => !window.ToonValley.state.modalOpen && !document.querySelector(selector), modalSelector, { timeout: 4000 });
   const closed = await state();
-  if (closed.modalOpen || closed.overlay || closed.pauseHidden || closed.renderPaused || closed.canvasVisibility === 'hidden' || closed.d.renderQuiesced || closed.d.canvasDetached) throw new Error(`${label}: bad close state ${JSON.stringify(closed)}`);
+  if (closed.modalOpen || closed.overlay || closed.pauseHidden || closed.renderPaused || closed.canvasVisibility === 'hidden' || closed.d.renderQuiesced || closed.d.canvasDetached || closed.d.handoffArmed) throw new Error(`${label}: bad close state ${JSON.stringify(closed)}`);
   await page.locator('#resume-button').click({ noWaitAfter: true });
   await lock(`${label} resume`);
 }
@@ -119,6 +127,7 @@ try {
     liveRender: window.ToonValleyPointerGuard.keepsRenderWorkDuringModal,
     surface: window.ToonValleyPointerGuard.keepsWebGLSurfaceDuringModal,
     shared: window.ToonValleyDeferredInteractionDispatch.sharedModalHandoff,
+    sentinel: window.ToonValleyDeferredInteractionDispatch.modalHandoffSentinel,
     noQuiesce: !window.ToonValleyDeferredInteractionDispatch.transientRenderQuiesce && !window.ToonValleyDeferredInteractionDispatch.preUnlockRenderQuiesce,
     noDetach: !window.ToonValleyDeferredInteractionDispatch.transientCanvasDetach,
     preserveActions: window.ToonValleyDeferredInteractionDispatch.preservesInteractionActions,
