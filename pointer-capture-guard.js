@@ -44,7 +44,10 @@
   function releasePendingAction() {
     const action = pendingModalAction;
     pendingModalAction = null;
-    if (typeof action === 'function') queueMicrotask(action);
+    // Never construct modal DOM from the pointerlockchange/microtask turn itself.
+    // Chromium can deadlock if Pointer Lock teardown and focusable modal creation
+    // overlap. The next task runs only after the native unlock event has settled.
+    if (typeof action === 'function') setTimeout(action, 0);
   }
 
   function completeObservedUnlock() {
@@ -120,9 +123,8 @@
   }
 
   // pointerlockchange is a Document event. Let the core listener update its normal
-  // pause state first, then repair intentional modal unlocks in the same event turn
-  // before paint. The polling fallback above guarantees the handoff even if a
-  // browser updates pointerLockElement without dispatching this event.
+  // pause state first, then repair intentional modal unlocks in the same event turn.
+  // Modal construction itself is deferred to the following task by releasePendingAction.
   document.addEventListener('pointerlockchange', () => {
     if (TV.DEVICE.touch || gamePointerLocked()) return;
     if (interactionUnlockPending || TV.state.modalOpen || modalUIVisible()) {
@@ -147,6 +149,7 @@
     explicitResumeAfterModal: true,
     preflightModalUnlock: true,
     deferredPointerLockExit: true,
+    deferredModalConstruction: true,
     documentUnlockHandoff: true,
     unlockPollingFallback: true,
     ownsModalActionHandoff: true,
