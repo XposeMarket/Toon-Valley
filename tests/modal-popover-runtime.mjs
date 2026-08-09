@@ -54,16 +54,25 @@ async function realKeyStroke(code, label) {
 }
 
 async function openNearestWithE(label) {
+  const beforeDispatch = await page.evaluate(() => window.ToonValleyInteractionKeyupDispatch?.dispatchCount?.() || 0);
   await realKeyStroke('KeyE', label);
-  await wait(100);
-  const afterPress = await diagnostics();
-  console.log(`[modal-popover] ${label} post-KeyE`, afterPress);
-  if (!afterPress.dispatcher || afterPress.dispatcher.arms < 1 || afterPress.dispatcher.keyups < 1 || afterPress.dispatcher.dispatches < 1 || afterPress.dispatcher.lastError || afterPress.dispatcher.lastDrop) {
-    throw new Error(`${label}: deferred dispatch regression ${JSON.stringify(afterPress)}`);
+  try {
+    await page.waitForFunction((previous) => {
+      const dispatcher = window.ToonValleyInteractionKeyupDispatch;
+      return Boolean(dispatcher && dispatcher.dispatchCount() > previous);
+    }, beforeDispatch, { timeout: 3000 });
+    await page.waitForSelector('.life-overlay', { timeout: 3000 });
+  } catch (error) {
+    const failed = await diagnostics();
+    console.log(`[modal-popover] ${label} dispatch timeout`, failed);
+    throw new Error(`${label}: deferred dispatch did not complete within 3s ${JSON.stringify(failed)}\n${error.message}`);
   }
-  await page.waitForSelector('.life-overlay', { timeout: 6000 });
   await page.waitForFunction(() => !document.pointerLockElement && window.ToonValley.state.modalOpen === true, null, { timeout: 6000 });
   const state = await diagnostics();
+  console.log(`[modal-popover] ${label} opened`, state);
+  if (!state.dispatcher || state.dispatcher.arms < 1 || state.dispatcher.keyups < 1 || state.dispatcher.dispatches <= beforeDispatch || state.dispatcher.lastError || state.dispatcher.lastDrop) {
+    throw new Error(`${label}: deferred dispatch regression ${JSON.stringify(state)}`);
+  }
   if (!state.modalOpen || !state.overlay || !state.pauseHidden || state.pointerLocked || !state.modalVisible || !state.resumePending || state.suppressedUnlocks < 1) {
     throw new Error(`${label}: modal Pointer Lock regression ${JSON.stringify(state)}`);
   }
@@ -104,9 +113,10 @@ try {
     explicitResumeAfterModal: window.ToonValleyPointerGuard.explicitResumeAfterModal,
     modalPauseSuppression: window.ToonValleyPointerGuard.modalPauseSuppression,
     consumesModalPointerLockChange: window.ToonValleyPointerGuard.consumesModalPointerLockChange,
+    deferredModalConstruction: window.ToonValleyPointerGuard.deferredModalConstruction,
     keyupDispatch: window.ToonValleyInteractionKeyupDispatch.executesAfterKeyup
   }));
-  if (!guard.explicitResumeAfterModal || !guard.modalPauseSuppression || !guard.consumesModalPointerLockChange || !guard.keyupDispatch) throw new Error(`Pointer/input capabilities missing ${JSON.stringify(guard)}`);
+  if (!guard.explicitResumeAfterModal || !guard.modalPauseSuppression || !guard.consumesModalPointerLockChange || !guard.deferredModalConstruction || !guard.keyupDispatch) throw new Error(`Pointer/input capabilities missing ${JSON.stringify(guard)}`);
 
   const homeTarget = await moveToInteraction('home', 'Open decorating menu');
   await page.waitForFunction((prompt) => window.ToonValley.state.nearestInteractable?.prompt === prompt, homeTarget.prompt, { timeout: 6000 });
