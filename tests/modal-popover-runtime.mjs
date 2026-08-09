@@ -3,12 +3,13 @@ import { spawn } from 'node:child_process';
 import process from 'node:process';
 
 const remoteURL = process.env.BASE_URL?.replace(/\/$/, '');
+const headed = process.env.HEADED === '1';
 const server = remoteURL ? null : spawn('python3', ['-m', 'http.server', '4173', '--bind', '127.0.0.1'], { stdio: ['ignore', 'pipe', 'pipe'] });
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const deadline = (ms, message) => wait(ms).then(() => { throw new Error(message); });
 if (server) await wait(900);
 
-const browser = await chromium.launch({ headless: true, args: ['--use-gl=swiftshader', '--enable-webgl'] });
+const browser = await chromium.launch({ headless: !headed, args: ['--use-gl=swiftshader', '--enable-webgl'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 760 } });
 page.setDefaultTimeout(10000);
 page.setDefaultNavigationTimeout(45000);
@@ -92,7 +93,7 @@ async function moveToInteraction(area, prompt, returnPoint = { x: 0, z: 10 }) {
 try {
   await page.goto(remoteURL || 'http://127.0.0.1:4173', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.ToonValley && window.ToonValleyLife && window.ToonValleyPointerGuard && window.ToonValleyInteractionKeyupDispatch && window.ToonValleyUILayerFix, null, { timeout: 30000 });
-  checkpoint('game globals ready');
+  checkpoint(`game globals ready (${headed ? 'headed' : 'headless'} Chromium)`);
 
   await page.click('#play-button');
   await page.waitForFunction(() => window.ToonValley.state.started === true);
@@ -136,7 +137,7 @@ try {
   checkpoint('ToonPhone replacement stable');
 
   if (errors.length) throw new Error(errors.join('\n'));
-  console.log(`Toon Valley modal/popover lifecycle passed with real keydown/keyup and modal pause suppression: ${remoteURL || 'localhost'}`, { homeTarget, shopTarget, guard });
+  console.log(`Toon Valley modal/popover lifecycle passed with real keydown/keyup and modal pause suppression: ${remoteURL || 'localhost'}`, { headed, homeTarget, shopTarget, guard });
 } finally {
   await browser.close();
   server?.kill('SIGTERM');
