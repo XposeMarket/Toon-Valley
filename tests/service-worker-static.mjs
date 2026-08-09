@@ -29,8 +29,11 @@ const requiredGuard = [
   'explicitResumeAfterModal: true',
   'modalPauseSuppression: true',
   'consumesModalPointerLockChange: true',
-  "window.addEventListener('pointerlockchange'",
-  'event.stopImmediatePropagation()',
+  'documentUnlockHandoff: true',
+  'ownsModalActionHandoff: true',
+  "document.addEventListener('pointerlockchange'",
+  'completeObservedUnlock()',
+  'queueMicrotask(action)',
   'armResumeAfterModal();',
   'queueMicrotask(hidePause)',
   'new MutationObserver',
@@ -39,15 +42,17 @@ const requiredGuard = [
   'suppressedModalUnlocks: () => modalUnlocksSuppressed'
 ];
 for (const snippet of requiredGuard) if (!guard.includes(snippet)) throw new Error(`Popover input invariant missing: ${snippet}`);
-if (guard.includes("document.addEventListener('pointerlockchange'")) throw new Error('Modal Pointer Lock suppression must run from window capture before the core document listener');
+if (guard.includes("window.addEventListener('pointerlockchange'")) throw new Error('Modal Pointer Lock handoff must listen on the native document event');
+if (guard.includes('stopImmediatePropagation')) throw new Error('Modal guard must repair the core pause state without suppressing native Pointer Lock listeners');
 if (guard.includes('Document?.prototype') || guard.includes('exitPointerLock =')) throw new Error('Pointer guard must not monkey-patch Pointer Lock release');
 
 const requiredDispatcher = [
   "event.code !== 'KeyE'",
   'event.stopImmediatePropagation()',
-  'setTimeout(() =>',
+  'guard.prepareModalInteraction(() => execute(interaction))',
   'interaction.action();',
   'executesAfterKeyup: true',
+  'guardOwnedUnlockHandoff: true',
   'dispatchCount: () => dispatches'
 ];
 for (const snippet of requiredDispatcher) if (!dispatcher.includes(snippet)) throw new Error(`Keyup interaction dispatcher invariant missing: ${snippet}`);
@@ -62,4 +67,4 @@ if (modalStateIndex < 0 || modalExitIndex < modalStateIndex) throw new Error('Li
 if (!game.includes("if (event.code === 'KeyE' && !event.repeat) interact();")) throw new Error('Core desktop E route must remain present behind the capture dispatcher');
 if (!game.includes('if (nearest.action) nearest.action();')) throw new Error('Core interact() action execution must remain unchanged');
 
-console.log('Toon Valley service-worker v36, post-keyup interactions, window-capture modal pause suppression, and stale-client recovery invariants passed.');
+console.log('Toon Valley service-worker v36, post-keyup modal handoff, document-level Pointer Lock recovery, and stale-client invariants passed.');
