@@ -29,11 +29,11 @@
       /^Talk to /.test(prompt);
   };
 
-  const canDefer = (interaction) => !TV.DEVICE.touch &&
-    TV.state.started &&
+  const canRun = (interaction) => TV.state.started &&
     !TV.state.modalOpen &&
     interaction?.area === TV.state.area &&
     (!interaction.enabled || interaction.enabled());
+  const canDefer = (interaction) => !TV.DEVICE.touch && canRun(interaction);
 
   function unwrapAction(action) {
     const seen = new Set();
@@ -46,19 +46,36 @@
     return current;
   }
 
+  function runOriginal(interaction, original, args) {
+    const target = unwrapAction(original);
+    if (typeof target !== 'function') {
+      lastDrop = 'dispatch-missing-original';
+      return undefined;
+    }
+
+    // Suspend WebGL/update work before any modal DOM is constructed. This protects
+    // both desktop and touch paths from the compositing/update collision that made
+    // popovers appear to crash the game. If the action does not actually open UI,
+    // restore immediately so ordinary interactions never leave the world paused.
+    const guard = window.ToonValleyPointerGuard;
+    guard?.suspendRenderForModal?.();
+    try {
+      const result = target.apply(interaction, args);
+      if (!TV.state.modalOpen) guard?.restoreRenderAfterModal?.();
+      return result;
+    } catch (error) {
+      guard?.restoreRenderAfterModal?.();
+      throw error;
+    }
+  }
+
   function execute(interaction, original, args) {
     pendingTimer = 0;
     pendingUnlock = null;
     attempts++;
     console.info('[modal-dispatch] execute-attempt', interaction?.prompt, { area: TV.state.area, modalOpen: TV.state.modalOpen, locked: document.pointerLockElement === TV.renderer?.domElement });
-    if (!canDefer(interaction)) {
+    if (!canRun(interaction)) {
       lastDrop = 'dispatch-no-longer-valid';
-      console.info('[modal-dispatch] dropped', interaction?.prompt, lastDrop);
-      return;
-    }
-    const target = unwrapAction(original);
-    if (typeof target !== 'function') {
-      lastDrop = 'dispatch-missing-original';
       console.info('[modal-dispatch] dropped', interaction?.prompt, lastDrop);
       return;
     }
@@ -68,13 +85,7 @@
     lastDrop = null;
     try {
       console.info('[modal-dispatch] target-before', lastPrompt);
-      target.apply(interaction, args);
-      if (TV.state.modalOpen) {
-        // A popover must stop the 3D/update workload completely. Gameplay input was
-        // already paused, but extension hooks and WebGL rendering could keep running
-        // behind the DOM and starve the main thread on low-power/mobile GPUs.
-        TV.state.pausedByVisibility = true;
-      }
+      runOriginal(interaction, original, args);
       console.info('[modal-dispatch] target-after', lastPrompt, { modalOpen: TV.state.modalOpen, overlay: Boolean(document.querySelector('.life-overlay,.ohx,.mb-overlay,#build-controls,#ohbuild,#bl-controls')), renderPaused: TV.state.pausedByVisibility });
     } catch (error) {
       lastError = String(error?.stack || error?.message || error);
@@ -159,8 +170,9 @@
     if (typeof original !== 'function') return false;
 
     function modalSafeAction(...args) {
+      if (!canRun(interaction)) return undefined;
       if (!canDefer(interaction) || document.pointerLockElement !== TV.renderer?.domElement) {
-        return original.apply(interaction, args);
+        return runOriginal(interaction, original, args);
       }
       schedule(interaction, original, args);
       return undefined;
@@ -196,10 +208,12 @@
     releasesPointerLockAfterKeyEvent: true,
     preservesInteractionActions: true,
     preservesPhysicalActionPath: true,
+    touchModalSafety: true,
     queuedActionsSurviveBlur: true,
     recursionGuard: true,
     observableUnlockPolling: true,
     pausesRenderWorkForModal: true,
+    preModalRenderSuspension: true,
     pending: () => Boolean(pendingTimer || pendingUnlock),
     wrappedCount: () => wrappedCount,
     scheduleCount: () => schedules,
