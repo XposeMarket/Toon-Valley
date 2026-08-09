@@ -23,12 +23,26 @@
 
   const pauseScreen = document.getElementById('pause-screen');
   let resumeAfterModal = false;
+  let modalRenderSuspended = false;
   let modalUnlocksSuppressed = 0;
 
   const gamePointerLocked = () => Boolean(TV.renderer?.domElement && document.pointerLockElement === TV.renderer.domElement);
   const modalVisible = () => Boolean(document.querySelector('.life-overlay,.mb-overlay,.ohx,#build-controls,#ohbuild,#bl-controls'));
   const modalActive = () => Boolean(TV.state.modalOpen || modalVisible());
   const hidePause = () => pauseScreen?.classList.add('hidden');
+
+  function suspendRenderForModal() {
+    if (modalRenderSuspended) return;
+    modalRenderSuspended = true;
+    TV.state.pausedByVisibility = true;
+  }
+
+  function restoreRenderAfterModal() {
+    if (!modalRenderSuspended || TV.state.modalOpen) return false;
+    modalRenderSuspended = false;
+    TV.state.pausedByVisibility = Boolean(document.hidden);
+    return true;
+  }
 
   function armResumeAfterModal() {
     if (TV.DEVICE.touch || !TV.state.started) return;
@@ -50,18 +64,15 @@
   });
 
   function syncPauseAfterModal() {
-    if (!resumeAfterModal || TV.DEVICE.touch || !TV.state.started) return;
     if (TV.state.modalOpen) {
-      TV.state.pausedByVisibility = true;
-      hidePause();
+      suspendRenderForModal();
+      if (!TV.DEVICE.touch) hidePause();
       return;
     }
 
-    // The popover is gone; resume the lightweight game loop so the explicit
-    // resume control and subsequent Pointer Lock transition stay responsive.
-    // Preserve a real background-tab pause when the document itself is hidden.
-    TV.state.pausedByVisibility = Boolean(document.hidden);
+    restoreRenderAfterModal();
 
+    if (TV.DEVICE.touch || !TV.state.started || !resumeAfterModal) return;
     if (gamePointerLocked()) {
       resumeAfterModal = false;
       hidePause();
@@ -85,8 +96,12 @@
     observerFreeModalSync: true,
     renderLoopFreeModalSync: true,
     suspendsRenderWorkForModal: true,
+    preModalRenderSuspension: true,
     modalVisible,
     modalActive,
+    suspendRenderForModal,
+    restoreRenderAfterModal,
+    renderSuspended: () => modalRenderSuspended,
     armResumeAfterModal,
     resumePending: () => resumeAfterModal,
     suppressedModalUnlocks: () => modalUnlocksSuppressed,
