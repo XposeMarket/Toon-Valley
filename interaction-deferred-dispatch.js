@@ -75,8 +75,6 @@
     lastDrop = null;
     try {
       interaction.action();
-      // A modal-classified interaction must replace the handoff sentinel with real
-      // UI synchronously. If it does not, restore normal pause/resume behavior.
       if (!TV.state.modalOpen) window.ToonValleyPointerGuard?.syncPauseAfterModal?.();
     } catch (error) {
       lastError = String(error?.stack || error?.message || error);
@@ -87,7 +85,6 @@
 
   function beginPointerUnlock(request) {
     if (pendingRequest !== request) return;
-    pendingTimer = 0;
     const { interaction } = request;
     if (!canRun(interaction)) {
       clearPending(request, 'unlock-no-longer-valid');
@@ -102,8 +99,6 @@
     TV.playerVelocity?.set?.(0, 0, 0);
     TV.state.jumpVelocity = 0;
     window.ToonValleyPointerGuard?.armResumeAfterModal?.();
-    // Mark the unlock as an intentional modal transition before Pointer Lock changes.
-    // This closes the race where the core pause handler could cover the popover.
     handoffModalArmed = true;
     request.modalSentinel = true;
     TV.setModalOpen(true);
@@ -150,6 +145,9 @@
 
     document.addEventListener('pointerlockchange', onPointerLockChange);
     try {
+      // IMPORTANT: production key handling calls this synchronously from the
+      // captured E-key event. Chromium is significantly more reliable releasing
+      // Pointer Lock from the originating user-input task than from a later timer.
       document.exitPointerLock?.();
     } catch (error) {
       cleanup();
@@ -168,7 +166,7 @@
     pendingRequest = request;
     lastPrompt = interaction.prompt || 'Interact';
     lastDrop = null;
-    pendingTimer = setTimeout(() => beginPointerUnlock(request), 0);
+    beginPointerUnlock(request);
   }
 
   function dispatchNearestModal() {
@@ -201,7 +199,8 @@
     modalHandoffSentinel: true,
     executesAfterKeyboardEvent: true,
     releasesPointerLockBeforeUI: true,
-    releasesPointerLockAfterKeyEvent: true,
+    releasesPointerLockWithinInputEvent: true,
+    releasesPointerLockAfterKeyEvent: false,
     preservesInteractionActions: true,
     preservesPhysicalActionPath: true,
     touchModalSafety: true,
