@@ -26,40 +26,36 @@ const navigateIndex = sw.indexOf('client.navigate(client.url)');
 if (guardIndex < 0 || navigateIndex < guardIndex) throw new Error('Stale-client navigation must be guarded by prior-release detection');
 
 const requiredGuard = [
+  'nativeModalExit: true',
   'modalFirstLifecycle: true',
   'explicitResumeAfterModal: true',
   'modalPauseSuppression: true',
   'consumesModalPointerLockChange: true',
-  'deferredPointerLockExit: true',
-  'const nativeExit = documentProto?.exitPointerLock',
-  'const modalOwned = Boolean(TV.state.modalOpen || modalUIVisible())',
-  'setTimeout(() => {',
-  'nativeExit.call(doc)',
   "document.addEventListener('pointerlockchange'",
   'armResumeAfterModal();',
   'queueMicrotask(hidePause)',
   'new MutationObserver',
   'modalVisible: modalUIVisible',
   'resumePending: () => resumeAfterModal',
-  'modalExitPending: () => modalExitPending',
   'suppressedModalUnlocks: () => modalUnlocksSuppressed'
 ];
 for (const snippet of requiredGuard) if (!guard.includes(snippet)) throw new Error(`Popover input invariant missing: ${snippet}`);
 if (guard.includes('prepareModalInteraction') || guard.includes('pendingModalAction')) throw new Error('Modal guard must not unlock before constructing the modal');
+if (guard.includes('Document?.prototype') || guard.includes('exitPointerLock =')) throw new Error('Pointer guard must not monkey-patch native Pointer Lock release');
 if (guard.includes("window.addEventListener('pointerlockchange'")) throw new Error('Modal Pointer Lock handoff must listen on the native document event');
 if (guard.includes('stopImmediatePropagation')) throw new Error('Modal guard must repair the core pause state without suppressing native Pointer Lock listeners');
 
 const requiredDispatcher = [
   "event.code !== 'KeyE'",
   'event.stopImmediatePropagation()',
-  'setTimeout(() => execute(interaction), 0)',
+  'execute(interaction);',
   'interaction.action();',
-  'executesAfterKeyup: true',
-  'modalFirstDispatch: true',
+  'executesOnKeyup: true',
+  'nativeModalExit: true',
   'dispatchCount: () => dispatches'
 ];
 for (const snippet of requiredDispatcher) if (!dispatcher.includes(snippet)) throw new Error(`Keyup interaction dispatcher invariant missing: ${snippet}`);
-if (dispatcher.includes('document.exitPointerLock') || dispatcher.includes('prepareModalInteraction')) throw new Error('Keyup dispatcher must not own Pointer Lock transitions');
+if (dispatcher.includes('setTimeout(() => execute(interaction)') || dispatcher.includes('document.exitPointerLock') || dispatcher.includes('prepareModalInteraction')) throw new Error('Keyup dispatcher must execute directly and must not own Pointer Lock transitions');
 
 if (index.includes('interaction-input-preflight.js')) throw new Error('Obsolete preflight interception must not load in index.html');
 if (!index.includes('<script src="pointer-capture-guard.js"></script><script src="interaction-keyup-dispatch.js"></script><script src="ui-layer-fix.js"></script>')) throw new Error('Keyup dispatcher must load immediately after the pointer guard');
@@ -70,4 +66,4 @@ if (modalStateIndex < 0 || modalExitIndex < modalStateIndex) throw new Error('Li
 if (!game.includes("if (event.code === 'KeyE' && !event.repeat) interact();")) throw new Error('Core desktop E route must remain present behind the capture dispatcher');
 if (!game.includes('if (nearest.action) nearest.action();')) throw new Error('Core interact() action execution must remain unchanged');
 
-console.log('Toon Valley service-worker v36, keyup modal-first dispatch, deferred modal-owned Pointer Lock release, pause suppression, and stale-client invariants passed.');
+console.log('Toon Valley service-worker v36, direct keyup interaction dispatch, native modal Pointer Lock release, pause suppression, and stale-client invariants passed.');
