@@ -39,6 +39,15 @@
     queueMicrotask(hidePause);
   }
 
+  function completeObservedUnlock() {
+    if (!interactionUnlockPending || gamePointerLocked()) return false;
+    interactionUnlockPending = false;
+    modalUnlocksSuppressed++;
+    armResumeAfterModal();
+    hidePause();
+    return true;
+  }
+
   function prepareModalInteraction() {
     if (TV.DEVICE.touch || !TV.state.started) return false;
     interactionUnlockPending = true;
@@ -48,12 +57,12 @@
       // Do not call exitPointerLock from inside the keyboard event dispatch. Some
       // Chromium/WebGL combinations can stall the page when Pointer Lock exits
       // synchronously from keyup. Release on the next task, then build UI only
-      // after pointerlockchange confirms the unlock.
+      // after the browser reports (or exposes) the unlocked state.
       unlockTimer = setTimeout(() => {
         unlockTimer = 0;
         try {
           if (gamePointerLocked()) document.exitPointerLock();
-          else interactionUnlockPending = false;
+          else completeObservedUnlock();
         } catch (error) {
           interactionUnlockPending = false;
           console.error('Unable to release Pointer Lock before modal interaction', error);
@@ -66,6 +75,7 @@
   }
 
   function modalInteractionReady() {
+    if (!gamePointerLocked()) completeObservedUnlock();
     return !gamePointerLocked() && !interactionUnlockPending;
   }
 
@@ -80,9 +90,10 @@
     if (TV.DEVICE.touch || gamePointerLocked()) return;
     if (interactionUnlockPending || TV.state.modalOpen || modalUIVisible()) {
       event.stopImmediatePropagation();
-      armResumeAfterModal();
-      interactionUnlockPending = false;
-      modalUnlocksSuppressed++;
+      if (!completeObservedUnlock()) {
+        armResumeAfterModal();
+        modalUnlocksSuppressed++;
+      }
     }
   }, true);
 
@@ -99,6 +110,7 @@
     explicitResumeAfterModal: true,
     preflightModalUnlock: true,
     deferredPointerLockExit: true,
+    observedUnlockFallback: true,
     modalVisible: modalUIVisible,
     prepareModalInteraction,
     modalInteractionReady,
