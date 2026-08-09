@@ -101,11 +101,10 @@ async function moveToInteraction(area, prompt) {
 }
 
 async function fireInteractKey() {
-  await page.evaluate(() => {
-    const init = { key: 'e', code: 'KeyE', keyCode: 69, which: 69, bubbles: true, cancelable: true };
-    document.dispatchEvent(new KeyboardEvent('keydown', init));
-    setTimeout(() => document.dispatchEvent(new KeyboardEvent('keyup', init)), 0);
-  });
+  // Send only the trusted keydown while Pointer Lock is active. Chromium can hang
+  // automation transports when a synthetic keyup spans an intentional unlock.
+  // Once the modal is observably open and Pointer Lock is gone, releasing E is safe.
+  await page.keyboard.down('e');
 }
 
 async function openCurrentInteraction(label) {
@@ -115,10 +114,13 @@ async function openCurrentInteraction(label) {
   }));
   mark(`${label}: fire interact`, JSON.stringify(before));
   await fireInteractKey();
+  mark(`${label}: keydown returned`);
   await page.waitForFunction((previous) => window.ToonValleyDeferredInteractionDispatch.scheduleCount() > previous, before.schedules, { timeout: 4000, polling: 50 });
   mark(`${label}: dispatch scheduled`);
   await page.waitForFunction((selector) => window.ToonValley.state.modalOpen && Boolean(document.querySelector(selector)), modalSelector, { timeout: 6000, polling: 50 });
   mark(`${label}: modal visible`);
+  await page.keyboard.up('e');
+  mark(`${label}: key released after unlock`);
   const state = await diagnostics();
   if (!state.dispatcher || state.dispatcher.wrapped < 2 || state.dispatcher.schedules <= before.schedules || state.dispatcher.attempts < 1 || state.dispatcher.dispatches <= before.dispatches || state.dispatcher.lastError || state.dispatcher.lastDrop) {
     throw new Error(`${label}: modal-safe action regression ${JSON.stringify(state)}`);
@@ -149,15 +151,11 @@ async function closeCurrentModal(label) {
   }
   mark(`${label}: pause resume visible`);
 
-  // Do not keep a Playwright mouse command open across requestPointerLock().
-  // Trigger the same button handler in-page, then observe the browser state.
   await page.evaluate(() => document.getElementById('resume-button')?.click());
   mark(`${label}: resume handler fired`);
   try {
     await page.waitForFunction(() => document.pointerLockElement === window.ToonValley?.renderer?.domElement, null, { timeout: 2500, polling: 50 });
   } catch {
-    // Programmatic click may lack user activation in stricter Chromium builds.
-    // A bounded trusted canvas click proves the real user reacquisition path.
     mark(`${label}: trusted resume fallback`);
     await page.locator('#game canvas').click({ position: { x: 640, y: 380 }, timeout: 5000, noWaitAfter: true });
   }
