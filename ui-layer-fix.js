@@ -22,6 +22,23 @@
   `;
   document.head.appendChild(style);
 
+  const modalSelector='.life-overlay,.mb-overlay,.ohx,#build-controls,#ohbuild,#bl-controls';
+  const nativeRender=TV.renderer.render.bind(TV.renderer);
+  let suppressedFrames=0;
+  TV.renderer.render=function(scene,camera){
+    // Chromium and several integrated-GPU drivers can hard-stall when a fixed,
+    // translucent DOM popover is composited over a WebGL canvas that is redrawing
+    // every frame. Keep the canvas mounted with its last completed frame and pause
+    // only new GPU draws while a real UI overlay exists. Game state/update hooks
+    // continue running, and rendering resumes automatically as soon as it closes.
+    // Movie view intentionally has no selector match, so theater playback continues.
+    if(TV.state.modalOpen&&document.querySelector(modalSelector)){
+      suppressedFrames++;
+      return;
+    }
+    return nativeRender(scene,camera);
+  };
+
   const dock=document.createElement('div');
   dock.id='tv-desktop-dock';
   dock.setAttribute('aria-label','Desktop ToonPhone shortcuts');
@@ -81,6 +98,17 @@
     openTab(tab);
   },true);
 
-  window.ToonValleyUILayerFix=Object.freeze({active:true,styleId:style.id,desktopShortcuts:{phone:'P',inventory:'I',tasks:'T'},pointerLockSafe:true,desktopDock:true,gpuSafePopoverCompositing:true,openTab});
+  window.ToonValleyUILayerFix=Object.freeze({
+    active:true,
+    styleId:style.id,
+    desktopShortcuts:{phone:'P',inventory:'I',tasks:'T'},
+    pointerLockSafe:true,
+    desktopDock:true,
+    gpuSafePopoverCompositing:true,
+    freezesWebGLDrawsUnderModal:true,
+    canvasRemainsMounted:true,
+    suppressedFrames:()=>suppressedFrames,
+    openTab
+  });
   console.info('Toon Valley UI layer fix ready');
 })();
