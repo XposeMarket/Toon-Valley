@@ -99,7 +99,18 @@ async function cycle(label) {
 
 try {
   await page.goto(remoteURL || 'http://127.0.0.1:4191', { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => window.ToonValley && window.ToonValleyLife && window.ToonValleyPointerGuard && window.ToonValleyDeferredInteractionDispatch && window.ToonValleyUILayerFix, null, { timeout: 30000 });
+  const boot = await page.evaluate(() => ({
+    three: Boolean(window.THREE),
+    game: Boolean(window.ToonValley),
+    life: Boolean(window.ToonValleyLife),
+    pointerGuard: Boolean(window.ToonValleyPointerGuard),
+    deferredDispatch: Boolean(window.ToonValleyDeferredInteractionDispatch),
+    uiLayer: Boolean(window.ToonValleyUILayerFix),
+    readyState: document.readyState
+  }));
+  if (!boot.three || !boot.game || !boot.life || !boot.pointerGuard || !boot.deferredDispatch || !boot.uiLayer) {
+    throw new Error(`Modal bootstrap incomplete ${JSON.stringify(boot)}${errors.length ? `\n${errors.join('\n')}` : ''}`);
+  }
   const caps = await page.evaluate(() => ({
     nativeExit: window.ToonValleyPointerGuard.nativeModalExit,
     suppressPause: window.ToonValleyPointerGuard.modalPauseSuppression,
