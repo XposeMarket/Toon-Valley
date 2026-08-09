@@ -37,17 +37,17 @@
     resumeAfterModal = false;
   }
 
-  // Every modal system already marks ToonValley.state.modalOpen before it calls
-  // document.exitPointerLock(). Suppress only that deliberate unlock so the core
-  // pause listener cannot cover the dialog. Ordinary Esc/unfocus unlocks continue
-  // to reach the core listener unchanged.
-  document.addEventListener('pointerlockchange', (event) => {
+  // Modal systems mark modalOpen before releasing Pointer Lock. Let the native
+  // pointerlockchange event finish normally so no synchronous event cancellation
+  // can wedge Chromium/Safari. The core listener may briefly toggle Pause on the
+  // same event; hide it again in a microtask before the browser paints the dialog.
+  document.addEventListener('pointerlockchange', () => {
     if (TV.DEVICE.touch || gamePointerLocked()) return;
     if (TV.state.modalOpen || modalUIVisible()) {
       resumeAfterModal = Boolean(TV.state.started);
       modalUnlocksSuppressed++;
       hidePause();
-      event.stopImmediatePropagation();
+      queueMicrotask(hidePause);
     }
   }, true);
 
