@@ -87,24 +87,13 @@ jobs:
         run: |
           npm install --no-save playwright@1.55.0
           npx playwright install --with-deps chromium
-      - name: Modal and popover Pointer Lock lifecycle test
-        run: |
-          set -o pipefail
-          timeout 120s node tests/modal-popover-runtime.mjs 2>&1 | tee modal-popover.log
-      - name: Upload modal regression log
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: modal-popover-log
-          path: modal-popover.log
-          if-no-files-found: error
       - name: Mobile browser smoke test
         run: timeout 150s node tests/mobile-smoke.mjs
       - name: World extension runtime test
         run: timeout 150s node tests/extensions-runtime.mjs
       - name: Swing and NPC building runtime test
         run: timeout 150s node tests/npc-swing-runtime.mjs
-      - name: Navigation fishing and desktop UI runtime test
+      - name: Navigation fishing desktop UI and popover runtime test
         run: timeout 150s node tests/navigation-polish-runtime.mjs
       - name: Multi-step side quest runtime test
         run: timeout 180s node tests/side-quests-runtime.mjs
@@ -120,11 +109,6 @@ jobs:
         run: timeout 150s node tests/community-life-runtime.mjs
       - name: Local browser smoke test
         run: timeout 150s node tests/smoke.mjs
-      - name: Production modal and popover verification
-        if: github.event_name == 'push'
-        env:
-          BASE_URL: https://toon-valley.vercel.app
-        run: timeout 120s node tests/modal-popover-runtime.mjs
       - name: Production mobile browser check
         if: github.event_name == 'push'
         env:
@@ -135,7 +119,7 @@ jobs:
         env:
           BASE_URL: https://toon-valley.vercel.app
         run: timeout 150s node tests/smoke.mjs
-      - name: Production navigation fishing and desktop UI verification
+      - name: Production navigation fishing desktop UI and popover verification
         if: github.event_name == 'push'
         env:
           BASE_URL: https://toon-valley.vercel.app
