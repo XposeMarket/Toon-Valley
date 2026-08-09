@@ -4,13 +4,13 @@
   if(!TV||!Life)return;
   const{THREE}=TV;
   const KEY='toon-valley-community-life-v1';
-  const state=Object.assign({trailDay:-1,trailVisited:[],errandDay:-1,errandIndex:0,errandVisited:[],errandDone:false},(()=>{try{return JSON.parse(localStorage.getItem(KEY)||'{}')}catch(_){return{}}})());
+  const defaults={trailDay:-1,trailStarted:false,trailVisited:[],trailAwaitingSignoff:false,trailDone:false,errandDay:-1,errandIndex:0,errandStarted:false,errandVisited:[],errandAwaitingSignoff:false,errandDone:false};
+  const state=Object.assign({...defaults},(()=>{try{return JSON.parse(localStorage.getItem(KEY)||'{}')}catch(_){return{}}})());
   const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(state))}catch(_){}};
   const root=new THREE.Group();TV.scene.add(root);
 
-  // Every stop is now comfortably inside the playable radius. The route begins
-  // directly at the west road and uses switchbacks instead of an invisible straight
-  // climb into the world boundary.
+  // Every stop is comfortably inside the playable radius. The route begins at the
+  // west road and uses visible switchbacks instead of an invisible boundary climb.
   const trail=[
     {name:'Pine Gate',x:-126,z:78},
     {name:'Foxglove Bend',x:-160,z:115},
@@ -36,14 +36,14 @@
   for(const x of[-2.25,2.25]){const post=new THREE.Mesh(new THREE.CylinderGeometry(.13,.18,3.4,7),TV.materials.wood);post.position.set(x,1.7,0);gate.add(post)}
   const beam=TV.outlinedMesh(TV.unitBox,TV.materials.wood,1.025);beam.scale.set(5.1,.36,.42);beam.position.y=3.18;gate.add(beam);
   const gateSign=TV.outlinedMesh(TV.unitBox,TV.materials.yellow,1.025);gateSign.scale.set(3.1,.72,.16);gateSign.position.set(0,2.55,.28);gate.add(gateSign);
-  TV.registerInteraction({x:-104,z:46,radius:4.5,area:'world',prompt:'Read Mountain Trail gate',action:()=>TV.showToast('🥾 Mountain Trail · Pine Gate → Foxglove Bend → Cloud Lookout → Sunset Rock. Stay on the wide brown path.',3)});
+  TV.registerInteraction({x:-104,z:46,radius:4.5,area:'world',prompt:'Mountain Trail ranger station',action:handleTrailGate});
 
   for(let i=0;i<trail.length;i++){
     const point=trail[i],y=TV.terrainHeight(point.x,point.z),post=new THREE.Group();post.position.set(point.x,y,point.z);root.add(post);
     const pole=new THREE.Mesh(new THREE.CylinderGeometry(.09,.12,2.4,6),TV.materials.wood);pole.position.y=1.2;post.add(pole);
     const sign=TV.outlinedMesh(TV.unitBox,markerMat,1.025);sign.scale.set(2.15,.7,.14);sign.position.set(0,2.05,0);post.add(sign);
     const cap=new THREE.Mesh(new THREE.ConeGeometry(.2,.5,6),TV.materials.yellow);cap.position.y=2.65;post.add(cap);
-    TV.registerInteraction({x:point.x,z:point.z,radius:4.6,area:'world',prompt:`Check in at ${point.name}`,action:()=>visitTrail(i)});
+    TV.registerInteraction({x:point.x,z:point.z,radius:4.6,area:'world',prompt:`Stamp trail card at ${point.name}`,enabled:()=>trailStopEnabled(i),action:()=>visitTrail(i)});
   }
 
   const lookoutPoint=trail[2],lookout=new THREE.Group();lookout.position.set(lookoutPoint.x,TV.terrainHeight(lookoutPoint.x,lookoutPoint.z)+.15,lookoutPoint.z);root.add(lookout);
@@ -53,13 +53,24 @@
   TV.registerInteraction({x:lookoutPoint.x,z:lookoutPoint.z,radius:4.5,area:'world',prompt:'Use Cloud Lookout telescope',action:()=>TV.showToast('🔭 From here you can see Town Square, Bluebell Lake, and the northern homes.',3)});
 
   function currentDay(){return Life.getState().world.day}
-  function ensureTrailDay(){const d=currentDay();if(state.trailDay!==d){state.trailDay=d;state.trailVisited=[];save()}}
-  function visitTrail(index){
+  function ensureTrailDay(){
+    const d=currentDay();if(state.trailDay===d)return;
+    state.trailDay=d;state.trailStarted=false;state.trailVisited=[];state.trailAwaitingSignoff=false;state.trailDone=false;save();
+  }
+  function trailStopEnabled(index){ensureTrailDay();return state.trailStarted&&!state.trailAwaitingSignoff&&!state.trailDone&&state.trailVisited.length===index}
+  function handleTrailGate(){
     ensureTrailDay();
-    if(state.trailVisited.includes(index)){TV.showToast(`🥾 ${trail[index].name} is already stamped today.`,1.7);return}
-    state.trailVisited.push(index);save();Life.emitProgress('explore',1,{activity:'hiking-trail',stop:trail[index].name});
-    if(state.trailVisited.length===trail.length){Life.addMoney(120,'Mountain trail completion');TV.showToast('🏔️ Trail complete! Ranger reward +$120.',2.8)}
-    else TV.showToast(`🥾 Trail stamp ${state.trailVisited.length}/${trail.length}: ${trail[index].name}`,2.2)
+    if(state.trailDone){TV.showToast('🥾 Today’s Mountain Trail card is signed off. Come back tomorrow for a fresh route.',2.7);return}
+    if(!state.trailStarted){state.trailStarted=true;state.trailVisited=[];state.trailAwaitingSignoff=false;save();TV.showToast('🥾 Ranger: “Trail card issued. Follow the brown switchbacks and stamp all four marked stops, then bring the card back here.”',4);return}
+    if(state.trailAwaitingSignoff){state.trailAwaitingSignoff=false;state.trailStarted=false;state.trailDone=true;Life.addMoney(120,'Mountain trail ranger sign-off');Life.emitProgress('explore',2,{activity:'hiking-trail-complete'});save();TV.showToast('🏔️ Ranger: “Four stamps, full route. Nice hike!” Trail sign-off complete · +$120',3.6);return}
+    const next=trail[state.trailVisited.length];TV.showToast(`🥾 Trail card ${state.trailVisited.length}/${trail.length}. Next stamp: ${next?.name}. Return here after Sunset Rock.`,3);
+  }
+  function visitTrail(index){
+    ensureTrailDay();if(!trailStopEnabled(index))return;
+    state.trailVisited.push(index);Life.emitProgress('explore',1,{activity:'hiking-trail',stop:trail[index].name});
+    if(state.trailVisited.length===trail.length){state.trailAwaitingSignoff=true;TV.showToast('🏔️ All four trail stamps collected. Hike back down to the Mountain Trail ranger station for sign-off and payment.',3.8)}
+    else TV.showToast(`🥾 Trail stamp ${state.trailVisited.length}/${trail.length}: ${trail[index].name}. Next: ${trail[state.trailVisited.length].name}.`,2.6);
+    save();
   }
 
   const errands=[
@@ -72,16 +83,27 @@
   for(const x of[-1.5,1.5]){const leg=new THREE.Mesh(TV.unitBox,TV.materials.wood);leg.scale.set(.22,2.2,.22);leg.position.set(x,.85,0);board.add(leg)}
   const roof=TV.outlinedMesh(TV.unitBox,TV.materials.red,1.02);roof.scale.set(4.4,.24,1.05);roof.position.y=3.45;board.add(roof);
   TV.registerInteraction({object:board,radius:4.2,area:'world',prompt:'Check community errand board',action:showErrand});
-  function ensureErrandDay(){const d=currentDay();if(state.errandDay===d)return;state.errandDay=d;state.errandIndex=d%errands.length;state.errandVisited=[];state.errandDone=false;save()}
+  function ensureErrandDay(){
+    const d=currentDay();if(state.errandDay===d)return;
+    state.errandDay=d;state.errandIndex=d%errands.length;state.errandStarted=false;state.errandVisited=[];state.errandAwaitingSignoff=false;state.errandDone=false;save();
+  }
   function activeErrand(){ensureErrandDay();return errands[state.errandIndex]}
-  function showErrand(){const e=activeErrand(),next=e.stops.find((_,i)=>!state.errandVisited.includes(i));if(state.errandDone)TV.showToast(`📌 ${e.title} completed today. Check back tomorrow.`,2.2);else TV.showToast(`📌 ${e.title}: ${state.errandVisited.length}/${e.stops.length}. Next: ${next?.name}.`,3)}
-  errands.forEach((errand,errandIndex)=>errand.stops.forEach((stop,stopIndex)=>TV.registerInteraction({x:stop.x,z:stop.z,radius:5,area:'world',prompt:`Community errand: ${stop.name}`,enabled:()=>{ensureErrandDay();return!state.errandDone&&state.errandIndex===errandIndex&&!state.errandVisited.includes(stopIndex)},action:()=>completeErrandStop(errandIndex,stopIndex)})));
+  function showErrand(){
+    const e=activeErrand();
+    if(state.errandDone){TV.showToast(`📌 ${e.title} signed off and paid today. Check back tomorrow.`,2.5);return}
+    if(!state.errandStarted){state.errandStarted=true;state.errandVisited=[];state.errandAwaitingSignoff=false;save();TV.showToast(`📌 Accepted: ${e.title}. Check in at ${e.stops[0].name}, follow all three stops in order, then return to this board for sign-off.`,4);return}
+    if(state.errandAwaitingSignoff){state.errandAwaitingSignoff=false;state.errandStarted=false;state.errandDone=true;Life.addMoney(165,`Community errand sign-off: ${e.title}`);Life.emitProgress('help',2,{activity:'community-errand-complete',route:e.title});save();TV.showToast(`✅ ${e.title} signed off at the board · +$165`,3.2);return}
+    const next=e.stops[state.errandVisited.length];TV.showToast(`📌 ${e.title}: ${state.errandVisited.length}/${e.stops.length}. Next check-in: ${next?.name}. Return here after the third stop.`,3.2);
+  }
+  errands.forEach((errand,errandIndex)=>errand.stops.forEach((stop,stopIndex)=>TV.registerInteraction({x:stop.x,z:stop.z,radius:5,area:'world',prompt:`Community errand: ${stop.name}`,enabled:()=>{ensureErrandDay();return state.errandStarted&&!state.errandDone&&!state.errandAwaitingSignoff&&state.errandIndex===errandIndex&&state.errandVisited.length===stopIndex},action:()=>completeErrandStop(errandIndex,stopIndex)})));
   function completeErrandStop(errandIndex,stopIndex){
-    ensureErrandDay();if(state.errandDone||state.errandIndex!==errandIndex||state.errandVisited.includes(stopIndex))return;
+    ensureErrandDay();if(!state.errandStarted||state.errandDone||state.errandAwaitingSignoff||state.errandIndex!==errandIndex||state.errandVisited.length!==stopIndex)return;
     const e=errands[errandIndex];state.errandVisited.push(stopIndex);Life.emitProgress('help',1,{activity:'community-errand',stop:e.stops[stopIndex].name});
-    if(state.errandVisited.length===e.stops.length){state.errandDone=true;Life.addMoney(165,`Community errand: ${e.title}`);TV.showToast(`✅ ${e.title} complete! +$165`,2.8)}else{const next=e.stops.find((_,i)=>!state.errandVisited.includes(i));TV.showToast(`📍 Checked ${e.stops[stopIndex].name}. Next: ${next.name}.`,2.5)}save()
+    if(state.errandVisited.length===e.stops.length){state.errandAwaitingSignoff=true;TV.showToast(`📍 ${e.title} route complete. Return to the community errand board for final sign-off and payment.`,3.6)}
+    else{const next=e.stops[state.errandVisited.length];TV.showToast(`📍 Checked ${e.stops[stopIndex].name}. Next: ${next.name}.`,2.5)}
+    save();
   }
   const maxRadius=Math.max(...trail.map(p=>Math.hypot(p.x,p.z)));
-  window.ToonValleyCommunityLife=Object.freeze({counts:{trailStops:trail.length,trailTiles,guideStones,errandRoutes:errands.length,errandStops:errands.reduce((n,e)=>n+e.stops.length,0)},trail,trailPath:trailPath.map(p=>p.slice()),trailMaxRadius:maxRadius,errands,getState:()=>({...state,trailVisited:[...state.trailVisited],errandVisited:[...state.errandVisited]}),visitTrail,showErrand});
+  window.ToonValleyCommunityLife=Object.freeze({counts:{trailStops:trail.length,trailTiles,guideStones,errandRoutes:errands.length,errandStops:errands.reduce((n,e)=>n+e.stops.length,0)},trail,trailPath:trailPath.map(p=>p.slice()),trailMaxRadius:maxRadius,errands,getState:()=>({...state,trailVisited:[...state.trailVisited],errandVisited:[...state.errandVisited]}),handleTrailGate,visitTrail,showErrand});
   console.info('Toon Valley community life ready',window.ToonValleyCommunityLife.counts);
 })();

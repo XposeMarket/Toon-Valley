@@ -7,22 +7,22 @@ const browser=await chromium.launch({headless:true,args:['--use-gl=swiftshader',
 await page.addInitScript(()=>{
  try{
   Object.defineProperty(Document.prototype,'pointerLockElement',{configurable:true,get(){return this.__tvTestPointerLock||null;}});
-  Element.prototype.requestPointerLock=function(){document.__tvTestPointerLock=this;document.dispatchEvent(new Event('pointerlockchange'));return Promise.resolve();};
-  Document.prototype.exitPointerLock=function(){this.__tvTestPointerLock=null;this.dispatchEvent(new Event('pointerlockchange'));};
+  Element.prototype.requestPointerLock=function(){document.__tvTestPointerLock=this;setTimeout(()=>document.dispatchEvent(new Event('pointerlockchange')),0);return Promise.resolve();};
+  Document.prototype.exitPointerLock=function(){this.__tvTestPointerLock=null;setTimeout(()=>document.dispatchEvent(new Event('pointerlockchange')),0);};
  }catch{}
 });
 try{
  await page.goto(base,{waitUntil:'domcontentloaded',timeout:60000});
- await page.waitForFunction(()=>window.ToonValleyNavigationPolish&&window.ToonValleyTransit&&window.ToonValleyCommunityLife&&window.ToonValleyBluebellLake&&window.ToonValleyTownActivities&&window.ToonValleyUILayerFix,null,{timeout:45000});
+ await page.waitForFunction(()=>window.ToonValleyNavigationPolish&&window.ToonValleyTransit&&window.ToonValleyCommunityLife&&window.ToonValleyBluebellLake&&window.ToonValleyTownActivities&&window.ToonValleyUILayerFix&&window.ToonValleyDeferredInteractionDispatch,null,{timeout:45000});
  await page.waitForFunction(()=>{try{return Boolean(window.ToonValleyLife?.getState()?.player&&document.getElementById('tasks-button'))}catch{return false}},null,{timeout:20000});
  await page.click('#play-button');await wait(120);
  const state=await page.evaluate(()=>{
-  const TV=window.ToonValley,T=window.ToonValleyTransit,C=window.ToonValleyCommunityLife,N=window.ToonValleyNavigationPolish,L=window.ToonValleyBluebellLake,A=window.ToonValleyTownActivities,U=window.ToonValleyUILayerFix,Life=window.ToonValleyLife;
+  const TV=window.ToonValley,T=window.ToonValleyTransit,C=window.ToonValleyCommunityLife,N=window.ToonValleyNavigationPolish,L=window.ToonValleyBluebellLake,A=window.ToonValleyTownActivities,U=window.ToonValleyUILayerFix,Life=window.ToonValleyLife,D=window.ToonValleyDeferredInteractionDispatch;
   const stop=T.stops.reduce((best,s)=>Math.hypot(T.bus.position.x-s.routeX,T.bus.position.z-s.routeZ)>Math.hypot(T.bus.position.x-best.routeX,T.bus.position.z-best.routeZ)?s:best,T.stops[0]);
   T.waitAt(stop);const busSeat={seated:TV.state.seated,rotation:TV.player.rotation.y,expected:stop.angle,label:TV.state.seat?.userData?.label};TV.standUpFromSeat(false);
   TV.enterInterior('school',{x:0,z:0});const names=new Set(['Ms. Maple','Cleo','Milo','Nora','Jasper']);const people=[...TV.interiorGroups.school.children].filter(o=>names.has(o.userData?.name)).map(o=>({name:o.userData.name,rotation:o.rotation.y}));const seat=TV.interactables.find(i=>i.area==='school'&&i.prompt==='Sit at student chair');seat?.action?.();const schoolSeat={seated:TV.state.seated,rotation:TV.player.rotation.y};TV.standUpFromSeat(false);TV.exitInterior();
   L.board();L.fish();const boatFishing={fx:L.fishingFX,casting:L.casting};L.leave();
-  return{busSeat,dwell:T.stopDwellSeconds,classroom:N.classroom,wayfinding:N.wayfinding,people,schoolSeat,trail:C.counts,trailMaxRadius:C.trailMaxRadius,worldRadius:TV.CONFIG.worldRadius,trailStart:C.trailPath[0],shoreFishing:A.fishingFX,spots:A.fishingSpots,boatFishing,dock:!!document.getElementById('tv-desktop-dock'),shortcuts:U.desktopShortcuts,pointerLockSafe:U.pointerLockSafe,hasOpenPhone:typeof Life.openPhone==='function',pointerBefore:!!document.pointerLockElement};
+  return{busSeat,dwell:T.stopDwellSeconds,classroom:N.classroom,wayfinding:N.wayfinding,people,schoolSeat,trail:C.counts,trailMaxRadius:C.trailMaxRadius,worldRadius:TV.CONFIG.worldRadius,trailStart:C.trailPath[0],shoreFishing:A.fishingFX,spots:A.fishingSpots,boatFishing,dock:!!document.getElementById('tv-desktop-dock'),shortcuts:U.desktopShortcuts,pointerLockSafe:U.pointerLockSafe,hasOpenPhone:typeof Life.openPhone==='function',pointerBefore:!!document.pointerLockElement,uiSafety:{keepsWebGL:U.keepsWebGLRenderingUnderModal,doesNotReplaceRenderer:!U.replacesRendererRender,unlockFirst:U.pointerUnlockBeforeModalConstruction,noPremodalState:U.preopensModalState===false},dispatcher:{keyup:D.executesOnKeyup,modalHandoff:D.explicitPointerLockHandoff,preservesPhysical:D.preservesPhysicalActionPath}};
  });
  if(!state.busSeat.seated||state.busSeat.label!=='shuttle bench'||Math.abs(state.busSeat.rotation-state.busSeat.expected)>.01)throw new Error(`Bus stop facing wrong ${JSON.stringify(state.busSeat)}`);
  if(state.dwell<4.5)throw new Error(`Shuttle dwell too short ${state.dwell}`);
@@ -33,5 +33,7 @@ try{
  if(state.shoreFishing!=='curved-line-and-bobber'||state.spots.some(p=>Math.hypot(p.x-112,p.z+82)>42))throw new Error(`Shore fishing placement/FX wrong ${JSON.stringify(state.spots)}`);
  if(state.boatFishing.fx!=='rod-curved-line-bobber'||!state.boatFishing.casting)throw new Error(`Boat fishing cast missing ${JSON.stringify(state.boatFishing)}`);
  if(!state.dock||state.shortcuts.phone!=='P'||state.shortcuts.tasks!=='T'||state.shortcuts.inventory!=='I'||!state.pointerLockSafe||!state.hasOpenPhone||!state.pointerBefore)throw new Error(`Desktop life controls missing ${JSON.stringify(state)}`);
+ if(!Object.values(state.uiSafety).every(Boolean))throw new Error(`Popover safety invariants missing ${JSON.stringify(state.uiSafety)}`);
+ if(!state.dispatcher.keyup||!state.dispatcher.modalHandoff||!state.dispatcher.preservesPhysical)throw new Error(`Desktop interaction dispatcher missing ${JSON.stringify(state.dispatcher)}`);
  if(errors.length)throw new Error(errors.join('\n'));console.log('Navigation/fishing/desktop control checks passed',state);
 }finally{await browser.close();if(server)server.kill('SIGTERM')}

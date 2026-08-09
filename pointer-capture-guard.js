@@ -1,5 +1,9 @@
 (() => {
   'use strict';
+
+  const TV = window.ToonValley;
+  if (!TV) return;
+
   const elementProto = globalThis.Element?.prototype;
   const nativeCapture = elementProto?.setPointerCapture;
   let captureGuarded = Boolean(nativeCapture?.__toonValleyGuarded);
@@ -8,9 +12,6 @@
       try {
         return nativeCapture.call(this, pointerId);
       } catch (error) {
-        // Mobile Safari and synthetic/browser-emulated touch streams can lose the
-        // active pointer between pointerdown and capture. Losing capture should end
-        // a drag gracefully, not crash camera/game input.
         if (error?.name === 'NotFoundError' || error?.name === 'InvalidStateError') return undefined;
         throw error;
       }
@@ -20,44 +21,85 @@
     captureGuarded = true;
   }
 
-  const documentProto = globalThis.Document?.prototype;
-  const nativeExit = documentProto?.exitPointerLock;
-  let modalExitGuarded = Boolean(nativeExit?.__toonValleyModalGuarded);
-  if (documentProto && typeof nativeExit === 'function' && !modalExitGuarded) {
-    function guardedExitPointerLock() {
-      // Life/shop/theater modals mark modalOpen before asking to release pointer
-      // lock. Releasing synchronously from the same interaction call can re-enter
-      // pointerlockchange while that UI is still being constructed. Defer only that
-      // modal-opening case; ordinary Esc/pause pointer-lock behavior stays native.
-      if (window.ToonValley?.state?.modalOpen) {
-        const doc = this;
-        setTimeout(() => {
-          try { nativeExit.call(doc); } catch (error) { console.warn('Deferred pointer-lock release failed', error); }
-        }, 0);
-        return undefined;
-      }
-      return nativeExit.call(this);
-    }
-    guardedExitPointerLock.__toonValleyModalGuarded = true;
-    documentProto.exitPointerLock = guardedExitPointerLock;
-    modalExitGuarded = true;
+  const pauseScreen = document.getElementById('pause-screen');
+  let resumeAfterModal = false;
+  let modalUnlocksSuppressed = 0;
+
+  const gamePointerLocked = () => Boolean(TV.renderer?.domElement && document.pointerLockElement === TV.renderer.domElement);
+  const modalVisible = () => Boolean(document.querySelector('.life-overlay,.mb-overlay,.ohx,#build-controls,#ohbuild,#bl-controls'));
+  const modalActive = () => Boolean(TV.state.modalOpen || modalVisible());
+  const hidePause = () => pauseScreen?.classList.add('hidden');
+
+  function suspendRenderForModal() { return false; }
+  function restoreRenderAfterModal() { return false; }
+
+  function armResumeAfterModal() {
+    // Only a genuine gameplay Pointer Lock handoff needs a resume gate. This keeps
+    // keyboard-opened UI safe in browsers/tests where the mouse was already free,
+    // and prevents a modal close from inventing a pause state that did not exist.
+    if (TV.DEVICE.touch || !TV.state.started || !gamePointerLocked()) return false;
+    resumeAfterModal = true;
+    hidePause();
+    return true;
   }
 
-  // Modal/popover interactions deliberately release pointer lock so the mouse can
-  // operate the UI. The core game's pointerlockchange listener normally interprets
-  // any unlock as a pause request. Intercept that event during a modal release so
-  // the pause screen cannot cover the popover and make the game appear to crash.
-  document.addEventListener('pointerlockchange', (event) => {
-    if (!window.ToonValley?.state?.modalOpen) return;
-    document.getElementById('pause-screen')?.classList.add('hidden');
-    event.stopImmediatePropagation();
-  }, true);
+  document.addEventListener('pointerlockchange', () => {
+    if (TV.DEVICE.touch) return;
+    if (gamePointerLocked()) {
+      if (!TV.state.modalOpen) resumeAfterModal = false;
+      return;
+    }
+    if (resumeAfterModal || TV.state.modalOpen) {
+      modalUnlocksSuppressed++;
+      if (resumeAfterModal) hidePause();
+    }
+  });
+
+  function syncPauseAfterModal() {
+    if (TV.state.modalOpen) {
+      if (!TV.DEVICE.touch && resumeAfterModal) hidePause();
+      return;
+    }
+
+    if (TV.DEVICE.touch || !TV.state.started || !resumeAfterModal) return;
+    if (gamePointerLocked()) {
+      resumeAfterModal = false;
+      hidePause();
+      return;
+    }
+    pauseScreen?.classList.remove('hidden');
+    resumeAfterModal = false;
+  }
+
+  const syncAfterInput = () => setTimeout(syncPauseAfterModal, 0);
+  document.addEventListener('click', syncAfterInput);
+  document.addEventListener('keydown', syncAfterInput);
+  document.addEventListener('pointerup', syncAfterInput);
 
   window.ToonValleyPointerGuard = Object.freeze({
     active: captureGuarded,
     pointerCapture: captureGuarded,
-    modalExit: modalExitGuarded,
-    modalPauseSuppression: true
+    nativeModalExit: true,
+    modalPauseSuppression: true,
+    explicitResumeAfterModal: true,
+    observerFreeModalSync: true,
+    renderLoopFreeModalSync: true,
+    keepsRenderWorkDuringModal: true,
+    keepsWebGLSurfaceDuringModal: true,
+    suspendsRenderWorkForModal: false,
+    preModalRenderSuspension: false,
+    removesWebGLSurfaceDuringModal: false,
+    modalVisible,
+    modalActive,
+    gamePointerLocked,
+    suspendRenderForModal,
+    restoreRenderAfterModal,
+    renderSuspended: () => false,
+    armResumeAfterModal,
+    resumePending: () => resumeAfterModal,
+    suppressedModalUnlocks: () => modalUnlocksSuppressed,
+    syncPauseAfterModal
   });
+
   console.info('Toon Valley pointer/input guard ready', window.ToonValleyPointerGuard);
 })();
