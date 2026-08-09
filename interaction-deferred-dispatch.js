@@ -11,6 +11,8 @@
   let attempts = 0;
   let dispatches = 0;
   let interceptions = 0;
+  let renderQuiesced = false;
+  let quiesceCount = 0;
   let lastPrompt = null;
   let lastError = null;
   let lastDrop = null;
@@ -39,11 +41,27 @@
       (!interaction.enabled || interaction.enabled());
   };
 
+  function quiesceRenderForUnlock() {
+    if (renderQuiesced) return;
+    renderQuiesced = true;
+    quiesceCount++;
+    TV.state.pausedByVisibility = true;
+    TV.state.lastTime = performance.now();
+  }
+
+  function resumeRenderAfterUnlock() {
+    if (!renderQuiesced) return;
+    renderQuiesced = false;
+    TV.state.pausedByVisibility = Boolean(document.hidden);
+    TV.state.lastTime = performance.now();
+  }
+
   function executeRequest(request) {
     if (pendingRequest !== request) return;
     clearTimeout(pendingTimer);
     pendingTimer = 0;
     pendingRequest = null;
+    resumeRenderAfterUnlock();
     attempts++;
     const { interaction } = request;
     if (!canRun(interaction)) {
@@ -67,12 +85,14 @@
     pendingTimer = 0;
     const { interaction } = request;
     if (!canRun(interaction)) {
+      resumeRenderAfterUnlock();
       pendingRequest = null;
       lastDrop = 'unlock-no-longer-valid';
       return;
     }
 
     if (document.pointerLockElement !== TV.renderer?.domElement) {
+      resumeRenderAfterUnlock();
       pendingTimer = setTimeout(() => executeRequest(request), 0);
       return;
     }
@@ -89,9 +109,14 @@
       document.removeEventListener('pointerlockchange', onPointerLockChange);
     };
     const finishIfUnlocked = () => {
-      if (pendingRequest !== request) { cleanup(); return true; }
+      if (pendingRequest !== request) {
+        cleanup();
+        resumeRenderAfterUnlock();
+        return true;
+      }
       if (document.pointerLockElement === TV.renderer?.domElement) return false;
       cleanup();
+      resumeRenderAfterUnlock();
       clearTimeout(pendingTimer);
       pendingTimer = setTimeout(() => executeRequest(request), 0);
       return true;
@@ -99,9 +124,14 @@
     const onPointerLockChange = () => { finishIfUnlocked(); };
     const verifyUnlock = () => {
       pendingTimer = 0;
-      if (pendingRequest !== request) { cleanup(); return; }
+      if (pendingRequest !== request) {
+        cleanup();
+        resumeRenderAfterUnlock();
+        return;
+      }
       if (!canRun(interaction)) {
         cleanup();
+        resumeRenderAfterUnlock();
         pendingRequest = null;
         lastDrop = 'unlock-no-longer-valid';
         return;
@@ -109,6 +139,7 @@
       if (finishIfUnlocked()) return;
       if (performance.now() - startedAt >= 1200) {
         cleanup();
+        resumeRenderAfterUnlock();
         pendingRequest = null;
         lastDrop = 'pointer-lock-release-timeout';
         console.warn('Toon Valley modal interaction cancelled because Pointer Lock did not release in time', interaction.prompt);
@@ -118,16 +149,24 @@
     };
 
     document.addEventListener('pointerlockchange', onPointerLockChange);
+    quiesceRenderForUnlock();
     try {
       document.exitPointerLock?.();
     } catch (error) {
+      cleanup();
+      resumeRenderAfterUnlock();
+      pendingRequest = null;
+      lastDrop = 'pointer-lock-release-error';
+      lastError = String(error?.stack || error?.message || error);
       console.warn('Pointer Lock release before modal interaction failed', error);
+      return;
     }
     if (!finishIfUnlocked()) pendingTimer = setTimeout(verifyUnlock, 16);
   }
 
   function schedule(interaction) {
     clearTimeout(pendingTimer);
+    resumeRenderAfterUnlock();
     schedules++;
     const request = { id: ++requestSequence, interaction };
     pendingRequest = request;
@@ -151,6 +190,8 @@
     event.stopImmediatePropagation();
   }, true);
 
+  window.addEventListener('pagehide', resumeRenderAfterUnlock);
+
   window.ToonValleyDeferredInteractionDispatch = Object.freeze({
     active: true,
     capturePhaseModalKeyGuard: true,
@@ -166,10 +207,14 @@
     observableUnlockPolling: true,
     eventDrivenUnlockHandoff: true,
     raceSafeSingleDispatch: true,
+    transientRenderQuiesce: true,
+    preUnlockRenderQuiesce: true,
     keepsRenderWorkDuringModal: true,
     pausesRenderWorkForModal: false,
     preModalRenderSuspension: false,
     pending: () => Boolean(pendingTimer || pendingRequest),
+    renderQuiesced: () => renderQuiesced,
+    quiesceCount: () => quiesceCount,
     interceptionCount: () => interceptions,
     scheduleCount: () => schedules,
     attemptCount: () => attempts,
