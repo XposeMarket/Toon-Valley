@@ -30,7 +30,7 @@
   const modalActive = () => Boolean(TV.state.modalOpen || modalVisible());
 
   function hidePauseForModal() {
-    if (TV.DEVICE.touch || !TV.state.started || !modalActive()) return;
+    if (TV.DEVICE.touch || !modalActive()) return;
     pauseScreen?.classList.add('hidden');
   }
 
