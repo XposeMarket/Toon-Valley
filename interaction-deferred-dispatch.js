@@ -5,7 +5,8 @@
   if (!TV) return;
 
   let pendingTimer = 0;
-  let pendingUnlock = null;
+  let pendingRequest = null;
+  let requestSequence = 0;
   let schedules = 0;
   let attempts = 0;
   let dispatches = 0;
@@ -52,15 +53,16 @@
       lastDrop = 'dispatch-missing-original';
       return undefined;
     }
-    // The only modal preflight is Pointer Lock release. Keep the renderer/update
-    // loop live so the DOM overlay stays responsive on Chromium and integrated GPUs.
     return target.apply(interaction, args);
   }
 
-  function execute(interaction, original, args) {
+  function executeRequest(request) {
+    if (pendingRequest !== request) return;
+    clearTimeout(pendingTimer);
     pendingTimer = 0;
-    pendingUnlock = null;
+    pendingRequest = null;
     attempts++;
+    const { interaction, original, args } = request;
     if (!canRun(interaction)) {
       lastDrop = 'dispatch-no-longer-valid';
       return;
@@ -77,38 +79,54 @@
     }
   }
 
-  function beginPointerUnlock(interaction, original, args) {
+  function beginPointerUnlock(request) {
+    if (pendingRequest !== request) return;
     pendingTimer = 0;
+    const { interaction } = request;
     if (!canDefer(interaction)) {
-      pendingUnlock = null;
+      pendingRequest = null;
       lastDrop = 'unlock-no-longer-valid';
       return;
     }
 
     if (document.pointerLockElement !== TV.renderer?.domElement) {
-      pendingTimer = setTimeout(() => execute(interaction, original, args), 0);
+      pendingTimer = setTimeout(() => executeRequest(request), 0);
       return;
     }
 
     TV.playerVelocity?.set?.(0, 0, 0);
     TV.state.jumpVelocity = 0;
     window.ToonValleyPointerGuard?.armResumeAfterModal?.();
-    pendingUnlock = interaction;
 
     const startedAt = performance.now();
+    let cleaned = false;
+    const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+      document.removeEventListener('pointerlockchange', onPointerLockChange);
+    };
+    const finishIfUnlocked = () => {
+      if (pendingRequest !== request) { cleanup(); return true; }
+      if (document.pointerLockElement === TV.renderer?.domElement) return false;
+      cleanup();
+      clearTimeout(pendingTimer);
+      pendingTimer = setTimeout(() => executeRequest(request), 0);
+      return true;
+    };
+    const onPointerLockChange = () => { finishIfUnlocked(); };
     const verifyUnlock = () => {
       pendingTimer = 0;
+      if (pendingRequest !== request) { cleanup(); return; }
       if (!canDefer(interaction)) {
-        pendingUnlock = null;
+        cleanup();
+        pendingRequest = null;
         lastDrop = 'unlock-no-longer-valid';
         return;
       }
-      if (document.pointerLockElement !== TV.renderer?.domElement) {
-        pendingTimer = setTimeout(() => execute(interaction, original, args), 0);
-        return;
-      }
-      if (performance.now() - startedAt >= 700) {
-        pendingUnlock = null;
+      if (finishIfUnlocked()) return;
+      if (performance.now() - startedAt >= 1200) {
+        cleanup();
+        pendingRequest = null;
         lastDrop = 'pointer-lock-release-timeout';
         console.warn('Toon Valley modal interaction cancelled because Pointer Lock did not release in time', interaction.prompt);
         return;
@@ -116,21 +134,23 @@
       pendingTimer = setTimeout(verifyUnlock, 16);
     };
 
+    document.addEventListener('pointerlockchange', onPointerLockChange);
     try {
       document.exitPointerLock?.();
     } catch (error) {
       console.warn('Pointer Lock release before modal interaction failed', error);
     }
-    pendingTimer = setTimeout(verifyUnlock, 0);
+    if (!finishIfUnlocked()) pendingTimer = setTimeout(verifyUnlock, 16);
   }
 
   function schedule(interaction, original, args) {
     clearTimeout(pendingTimer);
     schedules++;
-    pendingUnlock = interaction;
+    const request = { id: ++requestSequence, interaction, original, args };
+    pendingRequest = request;
     lastPrompt = interaction.prompt || 'Interact';
     lastDrop = null;
-    pendingTimer = setTimeout(() => beginPointerUnlock(interaction, original, args), 0);
+    pendingTimer = setTimeout(() => beginPointerUnlock(request), 0);
   }
 
   function wrapInteraction(interaction) {
@@ -194,10 +214,12 @@
     queuedActionsSurviveBlur: true,
     recursionGuard: true,
     observableUnlockPolling: true,
+    eventDrivenUnlockHandoff: true,
+    raceSafeSingleDispatch: true,
     keepsRenderWorkDuringModal: true,
     pausesRenderWorkForModal: false,
     preModalRenderSuspension: false,
-    pending: () => Boolean(pendingTimer || pendingUnlock),
+    pending: () => Boolean(pendingTimer || pendingRequest),
     wrappedCount: () => wrappedCount,
     scheduleCount: () => schedules,
     attemptCount: () => attempts,
