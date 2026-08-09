@@ -41,6 +41,8 @@
   const errandBoard = { name: 'Community errand board', x: 10, z: -2 };
   let phase = 0;
   let lastTargets = { trail: null, errand: null };
+  let timer = null;
+  let disposed = false;
 
   function currentTargets() {
     const state = Community.getState();
@@ -78,6 +80,14 @@
     lastTargets = targets;
     placeBeacon(trailBeacon, targets.trail, 0);
     placeBeacon(errandBeacon, targets.errand, Math.PI * 0.5);
+  }
+
+  function schedule() {
+    if (disposed) return;
+    update();
+    const hasActiveTarget = Boolean(lastTargets.trail || lastTargets.errand);
+    const foreground = TV.state.started && TV.state.area === 'world';
+    timer = setTimeout(schedule, foreground && hasActiveTarget ? 120 : 850);
   }
 
   function distanceLabel(target) {
@@ -126,8 +136,7 @@
     ];
   }
 
-  const timer = setInterval(update, 120);
-  update();
+  schedule();
 
   window.ToonValleyCommunityObjectives = Object.freeze({
     active: true,
@@ -135,8 +144,8 @@
     getSummaries,
     getTargets: () => ({ ...lastTargets }),
     refresh: update,
-    dispose: () => clearInterval(timer)
+    dispose: () => { disposed = true; if (timer) clearTimeout(timer); }
   });
 
-  console.info('Toon Valley community objective wayfinding ready', { markers: 2, trackedActivities: 2 });
+  console.info('Toon Valley community objective wayfinding ready', { markers: 2, trackedActivities: 2, adaptiveCadence: true });
 })();
