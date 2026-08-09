@@ -22,11 +22,9 @@
   `;
   document.head.appendChild(style);
 
-  // Do not intercept or suspend renderer.render for UI. Chromium/WebGL stacks can
-  // become unstable when a hot render function is replaced while Pointer Lock and
-  // composited fixed overlays transition in the same task. The game already gates
-  // input/update behavior through modalOpen; continuing normal draws keeps the
-  // WebGL context alive and avoids the apparent "popover crash"/frozen canvas.
+  // Keep the WebGL renderer untouched during UI transitions. Gameplay input is
+  // gated by modalOpen, while leaving rendering alive avoids context/compositor
+  // stalls during Pointer Lock -> fixed-overlay handoffs.
   let modalTransition=false;
   let transitions=0;
   function beginPopoverTransition(){modalTransition=true;transitions++;}
@@ -44,10 +42,14 @@
   let pendingTab=null,releaseTimer=0;
   function actuallyOpen(tab){
     const Life=window.ToonValleyLife;
-    if(!Life?.openPhone)return;
+    if(!Life?.openPhone){
+      pendingTab=null;
+      clearTimeout(releaseTimer);
+      window.ToonValleyPointerGuard?.syncPauseAfterModal?.();
+      return;
+    }
     pendingTab=null;
     clearTimeout(releaseTimer);
-    if(TV.state.modalOpen&&!document.querySelector('.life-overlay,.mb-overlay,.ohx'))TV.setModalOpen(false);
     document.getElementById('pause-screen')?.classList.add('hidden');
     beginPopoverTransition();
     requestAnimationFrame(()=>{
@@ -65,12 +67,11 @@
       window.ToonValleyLife?.openPhone?.(tab);
       return;
     }
-    if(TV.state.modalOpen&&!document.querySelector('.life-overlay,.mb-overlay,.ohx'))TV.setModalOpen(false);
     if(TV.state.modalOpen)return;
     if(document.pointerLockElement){
       pendingTab=tab;
       beginPopoverTransition();
-      TV.setModalOpen(true);
+      window.ToonValleyPointerGuard?.armResumeAfterModal?.();
       document.getElementById('pause-screen')?.classList.add('hidden');
       document.exitPointerLock?.();
       clearTimeout(releaseTimer);
@@ -105,6 +106,8 @@
     keepsWebGLRenderingUnderModal:true,
     freezesWebGLDrawsUnderModal:false,
     replacesRendererRender:false,
+    preopensModalState:false,
+    pointerUnlockBeforeModalConstruction:true,
     canvasRemainsMounted:true,
     beginPopoverTransition,
     endPopoverTransition,
