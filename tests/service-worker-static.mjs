@@ -2,6 +2,7 @@ import fs from 'node:fs';
 
 const sw = fs.readFileSync('sw.js', 'utf8');
 const guard = fs.readFileSync('pointer-capture-guard.js', 'utf8');
+const life = fs.readFileSync('life.js', 'utf8');
 
 const requiredSW = [
   "const CACHE_NAME = 'toon-valley-v33'",
@@ -22,25 +23,22 @@ if (guardIndex < 0 || navigateIndex < guardIndex) throw new Error('Stale-client 
 const requiredGuard = [
   'explicitResumeAfterModal: true',
   'modalPauseSuppression: true',
-  'modalInteractionWrapping: true',
-  'wrapModalInteraction',
-  'interactionOpensModal',
-  'TV.setModalOpen(true)',
-  'document.exitPointerLock?.()',
-  'const action = item.action',
-  'setTimeout(() =>',
+  'nativeModalLifecycle: true',
+  'modalUnlocksSuppressed',
   'revealResumeAfterModal',
   "document.addEventListener('pointerlockchange'",
   'event.stopImmediatePropagation()',
   'new MutationObserver',
   'modalVisible: modalUIVisible',
   'resumePending: () => resumeAfterModal',
-  'rescan: scanModalInteractions'
+  'suppressedModalUnlocks: () => modalUnlocksSuppressed'
 ];
 for (const snippet of requiredGuard) if (!guard.includes(snippet)) throw new Error(`Popover input invariant missing: ${snippet}`);
-if (guard.includes("event.code !== 'KeyE'") || guard.includes('preflightUIInteraction')) throw new Error('Popover guard must not intercept or replay the raw E keydown path');
-if (guard.includes('requestPointerLock')) throw new Error('Popover close events must not reacquire Pointer Lock directly');
-if (!guard.includes("/^Talk to /.test(prompt)")) throw new Error('NPC talk popovers must be classified for safe Pointer Lock wrapping');
-if (!guard.includes('if (!interactionOpensModal(item)')) throw new Error('Physical interactions must bypass modal wrapping');
+if (guard.includes("event.code !== 'KeyE'") || guard.includes('preflightUIInteraction') || guard.includes('wrapModalInteraction')) throw new Error('Popover guard must not intercept, defer, or wrap gameplay interactions');
+if (guard.includes('requestPointerLock') || guard.includes('Document.prototype.exitPointerLock')) throw new Error('Popover guard must not monkey-patch Pointer Lock APIs');
 
-console.log('Toon Valley service-worker stale-upgrade and wrapped modal lifecycle invariants passed.');
+const modalStateIndex = life.indexOf('TV.setModalOpen(true)');
+const modalExitIndex = life.indexOf('document.exitPointerLock()', modalStateIndex);
+if (modalStateIndex < 0 || modalExitIndex < modalStateIndex) throw new Error('Life modal must mark modalOpen before releasing Pointer Lock');
+
+console.log('Toon Valley service-worker stale-upgrade and native modal lifecycle invariants passed.');
