@@ -1,9 +1,9 @@
 'use strict';
 
-const CACHE_NAME = 'toon-valley-v35';
+const CACHE_NAME = 'toon-valley-v36';
 const CORE = [
   './', './index.html', './style.css', './life.css', './game.js', './life.js',
-  './pointer-capture-guard.js', './ui-layer-fix.js', './world-events.js', './town-activities.js',
+  './pointer-capture-guard.js', './interaction-keyup-dispatch.js', './ui-layer-fix.js', './world-events.js', './town-activities.js',
   './valley-services.js', './valley-routines.js', './central-plaza.js', './central-plaza-core.js',
   './public-interiors.js', './moonbeam-theater.js', './owned-home.js', './world-polish.js',
   './bluebell-lake.js', './interaction-world-fix.js', './valley-transit.js', './community-garden.js',
