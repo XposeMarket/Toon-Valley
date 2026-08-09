@@ -22,38 +22,20 @@
   }
 
   const pauseScreen = document.getElementById('pause-screen');
-  const gameSurface = document.getElementById('game');
   let resumeAfterModal = false;
-  let modalRenderSuspended = false;
   let modalUnlocksSuppressed = 0;
-  let previousGameDisplay = '';
 
   const gamePointerLocked = () => Boolean(TV.renderer?.domElement && document.pointerLockElement === TV.renderer.domElement);
   const modalVisible = () => Boolean(document.querySelector('.life-overlay,.mb-overlay,.ohx,#build-controls,#ohbuild,#bl-controls'));
   const modalActive = () => Boolean(TV.state.modalOpen || modalVisible());
   const hidePause = () => pauseScreen?.classList.add('hidden');
 
-  function suspendRenderForModal() {
-    if (modalRenderSuspended) return;
-    modalRenderSuspended = true;
-    TV.state.pausedByVisibility = true;
-    // Some Chromium/iGPU combinations can hard-stall when a DOM overlay is
-    // composited over a live WebGL surface even if rendering itself is paused.
-    // Remove the canvas surface from compositing for the lifetime of the modal.
-    if (gameSurface) {
-      previousGameDisplay = gameSurface.style.display;
-      gameSurface.style.display = 'none';
-    }
-  }
-
-  function restoreRenderAfterModal() {
-    if (!modalRenderSuspended || TV.state.modalOpen) return false;
-    modalRenderSuspended = false;
-    if (gameSurface) gameSurface.style.display = previousGameDisplay;
-    TV.state.pausedByVisibility = Boolean(document.hidden);
-    TV.state.cameraReady = false;
-    return true;
-  }
+  // Modal UI must stay responsive while the Three.js scene remains mounted.
+  // Pausing the update clock or removing the WebGL surface caused Chromium to
+  // stall while modal DOM was being composited. Pointer Lock handoff alone is
+  // sufficient; ordinary gameplay rendering can continue behind the overlay.
+  function suspendRenderForModal() { return false; }
+  function restoreRenderAfterModal() { return false; }
 
   function armResumeAfterModal() {
     if (TV.DEVICE.touch || !TV.state.started) return;
@@ -76,12 +58,9 @@
 
   function syncPauseAfterModal() {
     if (TV.state.modalOpen) {
-      suspendRenderForModal();
       if (!TV.DEVICE.touch) hidePause();
       return;
     }
-
-    restoreRenderAfterModal();
 
     if (TV.DEVICE.touch || !TV.state.started || !resumeAfterModal) return;
     if (gamePointerLocked()) {
@@ -106,14 +85,16 @@
     explicitResumeAfterModal: true,
     observerFreeModalSync: true,
     renderLoopFreeModalSync: true,
-    suspendsRenderWorkForModal: true,
-    preModalRenderSuspension: true,
-    removesWebGLSurfaceDuringModal: true,
+    keepsRenderWorkDuringModal: true,
+    keepsWebGLSurfaceDuringModal: true,
+    suspendsRenderWorkForModal: false,
+    preModalRenderSuspension: false,
+    removesWebGLSurfaceDuringModal: false,
     modalVisible,
     modalActive,
     suspendRenderForModal,
     restoreRenderAfterModal,
-    renderSuspended: () => modalRenderSuspended,
+    renderSuspended: () => false,
     armResumeAfterModal,
     resumePending: () => resumeAfterModal,
     suppressedModalUnlocks: () => modalUnlocksSuppressed,
