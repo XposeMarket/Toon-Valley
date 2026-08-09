@@ -12,12 +12,10 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 760 } });
 page.setDefaultTimeout(10000);
 page.setDefaultNavigationTimeout(45000);
 
-// Headed Chromium under Xvfb can stop servicing DevTools protocol commands while
-// native Pointer Lock is active. That makes a CI test hang before the popover code
-// runs. Install a browser-level Pointer Lock shim before the game loads so this test
-// deterministically exercises the same request/exit + pointerlockchange lifecycle
-// without depending on Xvfb's window-manager behavior. Other desktop smoke tests
-// continue to cover real browser keyboard/mouse navigation.
+// Native Pointer Lock is already covered by the desktop browser smoke suite. Xvfb
+// can deadlock Chromium's DevTools connection while real Pointer Lock is held, so
+// this focused regression supplies the browser state transition deterministically
+// and then drives the actual keyboard input path with Playwright keyboard events.
 await page.addInitScript(() => {
   let lockedElement = null;
   Object.defineProperty(Document.prototype, 'pointerLockElement', {
@@ -39,13 +37,14 @@ const errors = [];
 page.on('pageerror', (error) => errors.push(`pageerror: ${error.stack || error.message}`));
 page.on('console', (message) => { if (message.type() === 'error') errors.push(`console: ${message.text()}`); });
 const checkpoint = (label) => console.log(`[modal-popover] ${label}`);
+const modalSelector = '.life-overlay,.ohx,.mb-overlay,#build-controls,#ohbuild,#bl-controls';
 
 async function diagnostics() {
-  return page.evaluate(() => ({
+  return page.evaluate((selector) => ({
     pointerLocked: Boolean(document.pointerLockElement),
     gamePointerLocked: document.pointerLockElement === window.ToonValley?.renderer?.domElement,
     modalOpen: window.ToonValley?.state?.modalOpen,
-    overlay: Boolean(document.querySelector('.life-overlay')),
+    overlay: Boolean(document.querySelector(selector)),
     pauseHidden: document.getElementById('pause-screen')?.classList.contains('hidden'),
     nearest: window.ToonValley?.state?.nearestInteractable?.prompt || null,
     area: window.ToonValley?.state?.area,
@@ -63,21 +62,13 @@ async function diagnostics() {
       lastError: window.ToonValleyDeferredInteractionDispatch.lastError(),
       lastDrop: window.ToonValleyDeferredInteractionDispatch.lastDrop()
     } : null
-  }));
+  }), modalSelector);
 }
 
 async function requireGamePointerLock(label) {
   await page.waitForFunction(() => document.pointerLockElement === window.ToonValley?.renderer?.domElement, null, { timeout: 6000 });
   const state = await diagnostics();
   if (!state.gamePointerLocked) throw new Error(`${label}: game Pointer Lock was not active ${JSON.stringify(state)}`);
-}
-
-async function dispatchKeyboardGesture(code, key = '') {
-  await page.evaluate(({ code, key }) => {
-    const options = { code, key: key || code, bubbles: true, cancelable: true, repeat: false };
-    document.dispatchEvent(new KeyboardEvent('keydown', options));
-    document.dispatchEvent(new KeyboardEvent('keyup', options));
-  }, { code, key });
 }
 
 async function moveToInteraction(area, prompt) {
@@ -95,18 +86,13 @@ async function moveToInteraction(area, prompt) {
 async function openNearestWithE(label) {
   const before = await page.evaluate(() => window.ToonValleyDeferredInteractionDispatch.dispatchCount());
   const started = Date.now();
-  await dispatchKeyboardGesture('KeyE', 'e');
+  await page.keyboard.press('e');
   const eventDuration = Date.now() - started;
   if (eventDuration > 1500) throw new Error(`${label}: E event stack blocked for ${eventDuration}ms`);
 
-  try {
-    await page.waitForFunction((previous) => window.ToonValleyDeferredInteractionDispatch.dispatchCount() > previous, before, { timeout: 3000 });
-  } catch (error) {
-    const state = await diagnostics();
-    throw new Error(`${label}: deferred dispatch did not execute ${JSON.stringify(state)}\n${error.message}`);
-  }
-  await page.waitForSelector('.life-overlay', { timeout: 3000 });
-  await page.waitForFunction(() => !document.pointerLockElement && window.ToonValley.state.modalOpen === true, null, { timeout: 6000 });
+  await page.waitForFunction((previous) => window.ToonValleyDeferredInteractionDispatch.dispatchCount() > previous, before, { timeout: 4000 });
+  await page.waitForFunction((selector) => Boolean(document.querySelector(selector)) && window.ToonValley.state.modalOpen === true, modalSelector, { timeout: 4000 });
+  await page.waitForFunction(() => !document.pointerLockElement, null, { timeout: 4000 });
   const state = await diagnostics();
   console.log(`[modal-popover] ${label} opened`, state);
   if (!state.dispatcher || state.dispatcher.arms < 1 || state.dispatcher.keyups < 1 || state.dispatcher.attempts < 1 || state.dispatcher.dispatches <= before || state.dispatcher.lastError || state.dispatcher.lastDrop) {
@@ -117,9 +103,10 @@ async function openNearestWithE(label) {
   }
 }
 
-async function closeResume(label) {
-  await page.click('.life-close');
-  await page.waitForFunction(() => !document.querySelector('.life-overlay') && window.ToonValley.state.modalOpen === false, null, { timeout: 6000 });
+async function closeCurrentModal(label) {
+  const closeSelector = '.life-close,[data-close]';
+  await page.locator(closeSelector).first().click();
+  await page.waitForFunction((selector) => !document.querySelector(selector) && window.ToonValley.state.modalOpen === false, modalSelector, { timeout: 6000 });
   await page.waitForFunction(() => !document.getElementById('pause-screen').classList.contains('hidden'), null, { timeout: 6000 });
   await page.click('#resume-button');
   await requireGamePointerLock(`${label} resume`);
@@ -149,22 +136,22 @@ try {
   await requireGamePointerLock('initial play');
   checkpoint('game Pointer Lock state active');
 
-  await moveToInteraction('home', 'Open decorating menu');
-  await openNearestWithE('home decorating');
-  checkpoint('home decorating popover stable');
-  await closeResume('home decorating');
+  await moveToInteraction('furnitureStore', 'Browse furniture catalog');
+  await openNearestWithE('furniture catalog');
+  checkpoint('furniture catalog popover stable');
+  await closeCurrentModal('furniture catalog');
 
   const beforeMove = await page.evaluate(() => ({ x: window.ToonValley.player.position.x, z: window.ToonValley.player.position.z }));
-  await page.keyboard.down('KeyW'); await wait(450); await page.keyboard.up('KeyW');
+  await page.keyboard.down('w'); await wait(450); await page.keyboard.up('w');
   const afterMove = await page.evaluate(() => ({ x: window.ToonValley.player.position.x, z: window.ToonValley.player.position.z }));
   if (Math.hypot(afterMove.x - beforeMove.x, afterMove.z - beforeMove.z) < 0.25) throw new Error(`Gameplay did not resume after popover ${JSON.stringify({ beforeMove, afterMove })}`);
   checkpoint('WASD movement resumed');
 
-  await moveToInteraction('furnitureStore', 'Browse furniture catalog');
-  await requireGamePointerLock('shop precondition');
-  await openNearestWithE('furniture catalog');
-  checkpoint('furniture catalog popover stable');
-  await closeResume('furniture catalog');
+  await moveToInteraction('generalStore', 'Browse counter');
+  await requireGamePointerLock('store precondition');
+  await openNearestWithE('general store counter');
+  checkpoint('general store popover stable');
+  await closeCurrentModal('general store counter');
 
   if (errors.length) throw new Error(errors.join('\n'));
   console.log('Toon Valley modal/popover lifecycle passed', { base: remoteURL || 'localhost', capabilities, final: await diagnostics() });
