@@ -15,6 +15,9 @@
   let lastError = null;
   let lastDrop = null;
   let handoffModalArmed = false;
+  let renderQuiesced = false;
+  let nativeRender = null;
+  let quiesceCount = 0;
 
   const opensModalUI = (interaction) => {
     const prompt = interaction?.prompt || '';
@@ -40,6 +43,25 @@
       (!interaction.enabled || interaction.enabled());
   };
 
+  // Pointer Lock release and active WebGL presentation can deadlock Chromium on
+  // some GPU/ANGLE paths. Keep the canvas mounted and gameplay state untouched,
+  // but suppress renderer.render only for the unlock transition itself. The
+  // original render function is restored before any modal DOM/action executes.
+  function quiesceWebGLForUnlock() {
+    if (renderQuiesced || !TV.renderer || typeof TV.renderer.render !== 'function') return;
+    nativeRender = TV.renderer.render;
+    TV.renderer.render = function toonValleyUnlockRenderNoop() {};
+    renderQuiesced = true;
+    quiesceCount++;
+  }
+
+  function restoreWebGLAfterUnlock() {
+    if (!renderQuiesced) return;
+    if (nativeRender) TV.renderer.render = nativeRender;
+    nativeRender = null;
+    renderQuiesced = false;
+  }
+
   function disarmHandoff(showResume = true) {
     if (!handoffModalArmed) return;
     handoffModalArmed = false;
@@ -52,6 +74,7 @@
     clearTimeout(pendingTimer);
     pendingTimer = 0;
     pendingRequest = null;
+    restoreWebGLAfterUnlock();
     if (request?.modalSentinel) disarmHandoff(true);
     if (drop) lastDrop = drop;
   }
@@ -61,6 +84,7 @@
     clearTimeout(pendingTimer);
     pendingTimer = 0;
     pendingRequest = null;
+    restoreWebGLAfterUnlock();
     attempts++;
     const { interaction } = request;
     if (!canRun(interaction, true)) {
@@ -102,6 +126,7 @@
     handoffModalArmed = true;
     request.modalSentinel = true;
     TV.setModalOpen(true);
+    quiesceWebGLForUnlock();
 
     const startedAt = performance.now();
     let cleaned = false;
@@ -113,10 +138,12 @@
     const finishIfUnlocked = () => {
       if (pendingRequest !== request) {
         cleanup();
+        restoreWebGLAfterUnlock();
         return true;
       }
       if (document.pointerLockElement === TV.renderer?.domElement) return false;
       cleanup();
+      restoreWebGLAfterUnlock();
       clearTimeout(pendingTimer);
       pendingTimer = setTimeout(() => executeRequest(request), 0);
       return true;
@@ -126,6 +153,7 @@
       pendingTimer = 0;
       if (pendingRequest !== request) {
         cleanup();
+        restoreWebGLAfterUnlock();
         return;
       }
       if (!canRun(interaction, true)) {
@@ -145,9 +173,6 @@
 
     document.addEventListener('pointerlockchange', onPointerLockChange);
     try {
-      // IMPORTANT: production key handling calls this synchronously from the
-      // captured E-key event. Chromium is significantly more reliable releasing
-      // Pointer Lock from the originating user-input task than from a later timer.
       document.exitPointerLock?.();
     } catch (error) {
       cleanup();
@@ -189,6 +214,7 @@
     clearTimeout(pendingTimer);
     pendingTimer = 0;
     pendingRequest = null;
+    restoreWebGLAfterUnlock();
   });
 
   window.ToonValleyDeferredInteractionDispatch = Object.freeze({
@@ -208,17 +234,20 @@
     observableUnlockPolling: true,
     eventDrivenUnlockHandoff: true,
     raceSafeSingleDispatch: true,
-    transientRenderQuiesce: false,
+    transientRenderQuiesce: true,
+    webglOnlyTransitionQuiesce: true,
     transientCanvasDetach: false,
-    preUnlockRenderQuiesce: false,
+    preUnlockRenderQuiesce: true,
+    keepsCanvasMountedDuringUnlock: true,
+    mutatesVisibilityStateDuringUnlock: false,
     keepsRenderWorkDuringModal: true,
     pausesRenderWorkForModal: false,
     preModalRenderSuspension: false,
     pending: () => Boolean(pendingTimer || pendingRequest),
     handoffArmed: () => handoffModalArmed,
-    renderQuiesced: () => false,
+    renderQuiesced: () => renderQuiesced,
     canvasDetached: () => false,
-    quiesceCount: () => 0,
+    quiesceCount: () => quiesceCount,
     interceptionCount: () => interceptions,
     scheduleCount: () => schedules,
     attemptCount: () => attempts,
