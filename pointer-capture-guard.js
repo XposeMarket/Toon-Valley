@@ -21,16 +21,11 @@
     captureGuarded = true;
   }
 
-  const documentProto = globalThis.Document?.prototype;
-  const nativeExitPointerLock = documentProto?.exitPointerLock;
-  let modalExitDeferred = Boolean(nativeExitPointerLock?.__toonValleyModalExitGuard);
-
   const modalSelector = '.life-overlay,.mb-overlay,.ohx,#build-controls,#ohbuild,#bl-controls';
   const pauseScreen = document.getElementById('pause-screen');
   let resumeAfterModal = false;
-  let releaseQueued = false;
-  let interactionPreflight = false;
-  let lastPreflight = { phase: 'idle', prompt: null, error: null };
+  let wrappedCount = 0;
+  let scanElapsed = 0;
 
   const gamePointerLocked = () => Boolean(TV.renderer?.domElement && document.pointerLockElement === TV.renderer.domElement);
   const modalUIVisible = () => Boolean(document.querySelector(modalSelector));
@@ -41,129 +36,89 @@
     if (item.opensModal === true) return true;
     const prompt = item.prompt || '';
     if (/^Talk to /.test(prompt)) return true;
-    if (/^(Browse counter|Order snack|Shop outdoor market|Open job & property desk|Browse furniture catalog|Open decorating menu)$/.test(prompt)) return true;
+    if (/^(Browse counter|Order snack|Shop outdoor market|Open job & property desk|Browse furniture catalog|Open decorating menu|Buy ticket \/ see a film|Choose a short film)$/.test(prompt)) return true;
     const source = String(item.action);
-    return /\b(openNPC|openShop|openCafeCounter|openOutdoorMarket|openJobs|openPhone)\b/.test(source);
+    return /\b(openNPC|openShop|openCafeCounter|openOutdoorMarket|openJobs|openPhone|openTickets|choose)\b/.test(source);
   }
 
   function revealResumeAfterModal() {
-    if (!resumeAfterModal || interactionPreflight || TV.DEVICE.touch || !TV.state.started) return;
+    if (!resumeAfterModal || TV.DEVICE.touch || !TV.state.started) return;
     if (TV.state.modalOpen || modalUIVisible() || gamePointerLocked()) return;
     pauseScreen?.classList.remove('hidden');
     resumeAfterModal = false;
   }
 
-  function preflightUIInteraction(event, item) {
-    if (interactionPreflight || TV.DEVICE.touch || !TV.state.started || !gamePointerLocked()) return false;
-    if (!interactionOpensModal(item)) return false;
-
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    interactionPreflight = true;
-    resumeAfterModal = true;
-    hidePause();
+  function wrapModalInteraction(item) {
+    if (!interactionOpensModal(item) || item.userData?.tvModalPointerSafe) return;
+    item.userData = item.userData || {};
+    item.userData.tvModalPointerSafe = true;
     const action = item.action;
-    lastPreflight = { phase: 'releasing', prompt: item.prompt || '', error: null };
+    item.action = (...args) => {
+      if (TV.DEVICE.touch || !TV.state.started || !gamePointerLocked()) return action(...args);
 
-    try {
-      nativeExitPointerLock?.call(document);
-      lastPreflight = { phase: 'released', prompt: item.prompt || '', error: null };
-    } catch (error) {
-      interactionPreflight = false;
-      lastPreflight = { phase: 'release-error', prompt: item.prompt || '', error: String(error?.stack || error) };
-      console.warn('UI interaction Pointer Lock preflight failed', error);
-      queueMicrotask(revealResumeAfterModal);
-      return true;
-    }
+      // Mark UI mode before releasing Pointer Lock. The core pointerlockchange
+      // listener therefore cannot mistake this deliberate release for Esc/pause.
+      resumeAfterModal = true;
+      hidePause();
+      TV.setModalOpen(true);
+      try {
+        document.exitPointerLock?.();
+      } catch (error) {
+        console.warn('Unable to release Pointer Lock before UI interaction', error);
+      }
 
-    setTimeout(() => {
-      if (!TV.state.started) {
-        interactionPreflight = false;
-        lastPreflight = { phase: 'cancelled', prompt: item.prompt || '', error: 'game-not-started' };
+      setTimeout(() => {
+        try {
+          action(...args);
+        } catch (error) {
+          console.error('Deferred modal interaction failed', error);
+          TV.setModalOpen(false);
+        }
+        if (!modalUIVisible() && TV.state.modalOpen) TV.setModalOpen(false);
         queueMicrotask(revealResumeAfterModal);
-        return;
-      }
-      lastPreflight = { phase: 'executing', prompt: item.prompt || '', error: null };
-      try {
-        action();
-        lastPreflight = { phase: modalUIVisible() || TV.state.modalOpen ? 'opened' : 'executed', prompt: item.prompt || '', error: null };
-      } catch (error) {
-        lastPreflight = { phase: 'action-error', prompt: item.prompt || '', error: String(error?.stack || error) };
-        console.error('Deferred UI interaction failed', error);
-      } finally {
-        interactionPreflight = false;
-      }
-      queueMicrotask(revealResumeAfterModal);
-    }, 0);
-    return true;
+      }, 0);
+    };
+    wrappedCount++;
   }
 
-  function releaseModalPointerLock(doc = document) {
-    if (releaseQueued || interactionPreflight || TV.DEVICE.touch || !TV.state.started) return;
-    if (!(TV.state.modalOpen || modalUIVisible()) || !doc.pointerLockElement) return;
-    releaseQueued = true;
-    setTimeout(() => {
-      releaseQueued = false;
-      if (!(TV.state.modalOpen || modalUIVisible()) || !doc.pointerLockElement) return;
-      try {
-        nativeExitPointerLock?.call(doc);
-      } catch (error) {
-        console.warn('Modal Pointer Lock release failed', error);
-      }
-    }, 0);
+  function scanModalInteractions() {
+    for (const item of TV.interactables) wrapModalInteraction(item);
   }
-
-  if (documentProto && typeof nativeExitPointerLock === 'function' && !modalExitDeferred) {
-    function guardedExitPointerLock() {
-      if (window.ToonValley?.state?.modalOpen) {
-        releaseModalPointerLock(this);
-        return undefined;
-      }
-      return nativeExitPointerLock.call(this);
-    }
-    guardedExitPointerLock.__toonValleyModalExitGuard = true;
-    documentProto.exitPointerLock = guardedExitPointerLock;
-    modalExitDeferred = true;
-  }
-
-  document.addEventListener('keydown', (event) => {
-    if (event.code !== 'KeyE' || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
-    if (TV.state.modalOpen || modalUIVisible()) return;
-    preflightUIInteraction(event, TV.state.nearestInteractable);
-  }, true);
 
   document.addEventListener('pointerlockchange', (event) => {
-    if (TV.DEVICE.touch) return;
-    if (gamePointerLocked()) return;
-    if (interactionPreflight || TV.state.modalOpen || modalUIVisible()) {
+    if (TV.DEVICE.touch || gamePointerLocked()) return;
+    if (TV.state.modalOpen || modalUIVisible()) {
       resumeAfterModal = Boolean(TV.state.started);
       hidePause();
       event.stopImmediatePropagation();
     }
   }, true);
 
-  const observer = new MutationObserver(() => {
-    if (TV.state.modalOpen || modalUIVisible()) releaseModalPointerLock(document);
-    queueMicrotask(revealResumeAfterModal);
-  });
+  const observer = new MutationObserver(() => queueMicrotask(revealResumeAfterModal));
   if (document.body) observer.observe(document.body, { childList: true, subtree: true });
-
   document.addEventListener('click', () => queueMicrotask(revealResumeAfterModal));
   document.addEventListener('keydown', () => queueMicrotask(revealResumeAfterModal));
+
+  scanModalInteractions();
+  TV.registerUpdateHook((dt) => {
+    scanElapsed += dt;
+    if (scanElapsed >= 1) {
+      scanElapsed = 0;
+      scanModalInteractions();
+    }
+  });
 
   window.ToonValleyPointerGuard = Object.freeze({
     active: captureGuarded,
     pointerCapture: captureGuarded,
-    modalExitDeferred,
     modalPauseSuppression: true,
-    modalInteractionPreflight: true,
+    modalInteractionWrapping: true,
     explicitResumeAfterModal: true,
     modalVisible: modalUIVisible,
     resumePending: () => resumeAfterModal,
-    preflightActive: () => interactionPreflight,
-    preflightState: () => ({ ...lastPreflight }),
     interactionOpensModal,
-    forceModalRelease: () => releaseModalPointerLock(document)
+    wrappedCount: () => wrappedCount,
+    rescan: scanModalInteractions
   });
 
   console.info('Toon Valley pointer/input guard ready', window.ToonValleyPointerGuard);
