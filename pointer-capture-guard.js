@@ -54,7 +54,7 @@
       // UI-producing interactions may ask to release Pointer Lock while their modal
       // DOM is still being created. Defer that release until the interaction stack
       // has unwound so pointerlockchange cannot re-enter the pause/UI path mid-build.
-      if (window.ToonValley?.state?.modalOpen || modalUIVisible()) {
+      if (window.ToonValley?.state?.modalOpen) {
         scheduleModalPointerRelease(this);
         return undefined;
       }
