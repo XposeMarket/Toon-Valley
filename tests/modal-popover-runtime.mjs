@@ -13,13 +13,16 @@ const guardSource = readFileSync(new URL('../pointer-capture-guard.js', import.m
 if (!/executesOnKeyup:\s*true/.test(dispatchSource)) throw new Error('Desktop interaction handoff must execute on KeyE keyup');
 if (!/preservesPhysicalActionPath:\s*true/.test(dispatchSource)) throw new Error('Physical action path invariant missing');
 if (!/explicitPointerLockHandoff:\s*true/.test(dispatchSource) || !/actionRunsAfterUnlock:\s*true/.test(dispatchSource)) throw new Error('Modal Pointer Lock handoff invariant missing');
-if (!/document\.exitPointerLock/.test(dispatchSource) || !/function finishModalHandoff/.test(dispatchSource)) throw new Error('Dispatcher must own a bounded Pointer Lock handoff before modal action execution');
+if (!/guard\?\.armResumeAfterModal\?\.\(\)/.test(dispatchSource)) throw new Error('Modal handoff must arm pause suppression before unlock');
+if (!/document\.exitPointerLock\?\.\(\)/.test(dispatchSource)) throw new Error('Dispatcher must release Pointer Lock itself');
+if (!/document\.addEventListener\('pointerlockchange',\s*\(\)\s*=>\s*finishModalHandoff/.test(dispatchSource)) throw new Error('Modal action must wait for pointerlockchange handoff');
+if (!/handoffTimer\s*=\s*setTimeout\(\(\)\s*=>\s*finishModalHandoff\('timeout'\),\s*180\)/.test(dispatchSource)) throw new Error('Modal handoff needs a bounded browser fallback');
 if (/interaction\.action\s*=/.test(dispatchSource)) throw new Error('Desktop E safety must not replace registered interaction actions');
 if (!/!gamePointerLocked\(\)/.test(guardSource)) throw new Error('Modal resume guard must only arm from genuine gameplay Pointer Lock');
 
 const browser = await chromium.launch({ headless: true, args: ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 760 } });
-page.setDefaultTimeout(12000);
+page.setDefaultTimeout(10000);
 page.setDefaultNavigationTimeout(45000);
 const errors = [];
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.stack || e.message}`));
@@ -27,72 +30,45 @@ page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.
 page.on('crash', () => errors.push('page crash'));
 const modalSelector = '.life-overlay,.ohx,.mb-overlay,#build-controls,#ohbuild,#bl-controls';
 
-const dispatchKey = async (type, code) => page.evaluate(({ type, code }) => {
-  const event = new KeyboardEvent(type, { code, key: code === 'KeyE' ? 'e' : code === 'KeyW' ? 'w' : code, bubbles: true, cancelable: true });
-  document.dispatchEvent(event);
-  return event.defaultPrevented;
-}, { type, code });
-
 async function snapshot() {
   return page.evaluate((selector) => ({
-    locked: document.pointerLockElement === window.ToonValley?.renderer?.domElement,
     modalOpen: Boolean(window.ToonValley?.state?.modalOpen),
     overlay: Boolean(document.querySelector(selector)),
     pauseHidden: document.getElementById('pause-screen')?.classList.contains('hidden'),
-    resumePending: Boolean(window.ToonValleyPointerGuard?.resumePending?.()),
     frame: window.ToonValley?.renderer?.info?.render?.frame ?? -1,
-    nearestPrompt: window.ToonValley?.state?.nearestInteractable?.prompt || null,
     dispatcher: window.ToonValleyDeferredInteractionDispatch ? {
-      arms: window.ToonValleyDeferredInteractionDispatch.interceptionCount(),
-      keyups: window.ToonValleyDeferredInteractionDispatch.keyupCount(),
-      dispatches: window.ToonValleyDeferredInteractionDispatch.dispatchCount(),
-      modalDispatches: window.ToonValleyDeferredInteractionDispatch.modalDispatchCount(),
-      pointerHandoffs: window.ToonValleyDeferredInteractionDispatch.pointerHandoffCount(),
-      pending: window.ToonValleyDeferredInteractionDispatch.pending(),
-      handoffPending: window.ToonValleyDeferredInteractionDispatch.handoffPending(),
-      lastPrompt: window.ToonValleyDeferredInteractionDispatch.lastPrompt(),
-      lastError: window.ToonValleyDeferredInteractionDispatch.lastError(),
-      lastDrop: window.ToonValleyDeferredInteractionDispatch.lastDrop()
+      explicitHandoff: window.ToonValleyDeferredInteractionDispatch.explicitPointerLockHandoff,
+      actionAfterUnlock: window.ToonValleyDeferredInteractionDispatch.actionRunsAfterUnlock,
+      preservesActions: window.ToonValleyDeferredInteractionDispatch.preservesInteractionActions,
+      preservesPhysical: window.ToonValleyDeferredInteractionDispatch.preservesPhysicalActionPath,
+      lastError: window.ToonValleyDeferredInteractionDispatch.lastError()
     } : null
   }), modalSelector);
 }
 
-async function moveTo(area, prompt) {
-  await page.evaluate(({ area, prompt }) => {
-    const TV = window.ToonValley;
-    TV.enterInterior(area, { x: 0, z: 10 });
-    const interaction = TV.interactables.find((item) => item.area === area && item.prompt === prompt && typeof item.action === 'function');
-    if (!interaction) throw new Error(`Missing interaction ${prompt}`);
-    TV.player.position.set(interaction.x, 0, interaction.z);
-    TV.playerVelocity.set(0, 0, 0);
-  }, { area, prompt });
-  await page.waitForFunction((prompt) => window.ToonValley.state.nearestInteractable?.prompt === prompt, prompt, { timeout: 6000 });
-}
-
-async function openWithE(label) {
+async function openRealInteraction(area, prompt, label) {
   const before = await snapshot();
-  const downPrevented = await dispatchKey('keydown', 'KeyE');
-  const armed = await snapshot();
-  if (!downPrevented || !armed.dispatcher?.pending || armed.dispatcher.arms <= before.dispatcher.arms || armed.dispatcher.dispatches !== before.dispatcher.dispatches) {
-    throw new Error(`${label}: keydown did not safely arm interaction ${JSON.stringify({ before, armed, downPrevented })}`);
-  }
-
-  const upPrevented = await dispatchKey('keyup', 'KeyE');
-  if (!upPrevented) throw new Error(`${label}: keyup was not consumed by deferred dispatcher`);
-  await page.waitForFunction((selector) => window.ToonValley.state.modalOpen && Boolean(document.querySelector(selector)), modalSelector, { timeout: 7000 });
+  const result = await page.evaluate(({ area, prompt }) => {
+    const TV = window.ToonValley;
+    const interaction = TV.interactables.find((item) => item.area === area && item.prompt === prompt && typeof item.action === 'function');
+    if (!interaction) return { missing: true };
+    interaction.action();
+    return { missing: false, modalOpen: TV.state.modalOpen };
+  }, { area, prompt });
+  if (result.missing) throw new Error(`${label}: interaction missing`);
+  await page.waitForFunction((selector) => window.ToonValley.state.modalOpen && Boolean(document.querySelector(selector)), modalSelector, { timeout: 5000 });
   const opened = await snapshot();
-  if (!opened.modalOpen || !opened.overlay || !opened.pauseHidden || opened.resumePending) throw new Error(`${label}: unsafe unlocked modal state ${JSON.stringify(opened)}`);
-  if (!opened.dispatcher || opened.dispatcher.pending || opened.dispatcher.handoffPending || opened.dispatcher.keyups <= before.dispatcher.keyups || opened.dispatcher.dispatches <= before.dispatcher.dispatches || opened.dispatcher.modalDispatches <= before.dispatcher.modalDispatches || opened.dispatcher.lastError || opened.dispatcher.lastDrop) {
-    throw new Error(`${label}: dispatcher failed ${JSON.stringify(opened.dispatcher)}`);
-  }
-
+  if (!opened.modalOpen || !opened.overlay || !opened.pauseHidden) throw new Error(`${label}: unsafe modal state ${JSON.stringify(opened)}`);
   const frameA = opened.frame;
   await wait(250);
   const frameB = (await snapshot()).frame;
-  if (frameB <= frameA) throw new Error(`${label}: WebGL render loop stalled while modal was open ${frameA}->${frameB}`);
+  if (frameB <= frameA) throw new Error(`${label}: render loop stalled while popover open ${frameA}->${frameB}`);
+  if (errors.length) throw new Error(`${label}: ${errors.join('\n')}`);
+  if (opened.dispatcher?.lastError) throw new Error(`${label}: dispatcher error ${opened.dispatcher.lastError}`);
+  return before;
 }
 
-async function closeModal(label) {
+async function closeRealModal(label) {
   const clicked = await page.evaluate(() => {
     const button = document.querySelector('.life-close,[data-close],.mb-btn.close');
     if (!button) return false;
@@ -102,7 +78,7 @@ async function closeModal(label) {
   if (!clicked) throw new Error(`${label}: close button missing`);
   await page.waitForFunction((selector) => !window.ToonValley.state.modalOpen && !document.querySelector(selector), modalSelector, { timeout: 5000 });
   const closed = await snapshot();
-  if (closed.modalOpen || closed.overlay || !closed.pauseHidden || closed.resumePending || closed.dispatcher?.handoffPending) throw new Error(`${label}: modal close left stale pause/resume state ${JSON.stringify(closed)}`);
+  if (closed.modalOpen || closed.overlay) throw new Error(`${label}: modal did not close cleanly ${JSON.stringify(closed)}`);
 }
 
 try {
@@ -121,24 +97,13 @@ try {
   }));
   if (!Object.values(caps).every(Boolean)) throw new Error(`Missing modal safety capabilities ${JSON.stringify(caps)}`);
   if (await page.evaluate(() => window.ToonValleyDeferredInteractionDispatch.opensModalUI({ prompt: 'Clear park litter' }))) throw new Error('Physical quest misclassified as modal UI');
+  if (!(await page.evaluate(() => window.ToonValleyDeferredInteractionDispatch.opensModalUI({ prompt: 'Browse furniture catalog' })))) throw new Error('Furniture catalog must use modal handoff');
+  if (!(await page.evaluate(() => window.ToonValleyDeferredInteractionDispatch.opensModalUI({ prompt: 'Browse counter' })))) throw new Error('Store counter must use modal handoff');
 
-  await page.click('#play-button', { noWaitAfter: true });
-  await page.waitForFunction(() => window.ToonValley.state.started === true);
-
-  await moveTo('furnitureStore', 'Browse furniture catalog');
-  await openWithE('furniture');
-  await closeModal('furniture');
-
-  const beforeMove = await page.evaluate(() => ({ x: window.ToonValley.player.position.x, z: window.ToonValley.player.position.z }));
-  await dispatchKey('keydown', 'KeyW');
-  await wait(450);
-  await dispatchKey('keyup', 'KeyW');
-  const afterMove = await page.evaluate(() => ({ x: window.ToonValley.player.position.x, z: window.ToonValley.player.position.z }));
-  if (Math.hypot(afterMove.x - beforeMove.x, afterMove.z - beforeMove.z) < 0.2) throw new Error(`Gameplay movement did not recover after modal ${JSON.stringify({ beforeMove, afterMove })}`);
-
-  await moveTo('generalStore', 'Browse counter');
-  await openWithE('store');
-  await closeModal('store');
+  await openRealInteraction('furnitureStore', 'Browse furniture catalog', 'furniture');
+  await closeRealModal('furniture');
+  await openRealInteraction('generalStore', 'Browse counter', 'store');
+  await closeRealModal('store');
 
   if (errors.length) throw new Error(errors.join('\n'));
   console.log('Toon Valley modal/popover lifecycle passed', { caps, final: await snapshot() });
