@@ -84,10 +84,10 @@ try {
 
   const guard = await page.evaluate(() => ({
     explicitResumeAfterModal: window.ToonValleyPointerGuard.explicitResumeAfterModal,
-    modalExitDeferred: window.ToonValleyPointerGuard.modalExitDeferred,
+    modalExitSynchronous: window.ToonValleyPointerGuard.modalExitSynchronous,
     modalPauseSuppression: window.ToonValleyPointerGuard.modalPauseSuppression
   }));
-  if (!guard.explicitResumeAfterModal || !guard.modalExitDeferred || !guard.modalPauseSuppression) throw new Error(`Pointer guard capabilities missing ${JSON.stringify(guard)}`);
+  if (!guard.explicitResumeAfterModal || !guard.modalExitSynchronous || !guard.modalPauseSuppression) throw new Error(`Pointer guard capabilities missing ${JSON.stringify(guard)}`);
 
   const npcTarget = await page.evaluate(() => {
     const TV = window.ToonValley;
@@ -139,7 +139,6 @@ try {
   checkpoint('WASD movement resumed');
 
   await page.evaluate(() => window.ToonValleyUILayerFix.openTab('tasks'));
-  window.__tvModalActionResult = undefined;
   await page.waitForSelector('.life-overlay', { timeout: 6000 });
   await page.waitForFunction(() => !document.pointerLockElement && window.ToonValley.state.modalOpen === true, null, { timeout: 6000 });
   checkpoint('ToonPhone opened through desktop UI layer');
