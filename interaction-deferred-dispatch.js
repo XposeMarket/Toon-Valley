@@ -52,31 +52,17 @@
       lastDrop = 'dispatch-missing-original';
       return undefined;
     }
-
-    // Suspend WebGL/update work before any modal DOM is constructed. This protects
-    // both desktop and touch paths from the compositing/update collision that made
-    // popovers appear to crash the game. If the action does not actually open UI,
-    // restore immediately so ordinary interactions never leave the world paused.
-    const guard = window.ToonValleyPointerGuard;
-    guard?.suspendRenderForModal?.();
-    try {
-      const result = target.apply(interaction, args);
-      if (!TV.state.modalOpen) guard?.restoreRenderAfterModal?.();
-      return result;
-    } catch (error) {
-      guard?.restoreRenderAfterModal?.();
-      throw error;
-    }
+    // The only modal preflight is Pointer Lock release. Keep the renderer/update
+    // loop live so the DOM overlay stays responsive on Chromium and integrated GPUs.
+    return target.apply(interaction, args);
   }
 
   function execute(interaction, original, args) {
     pendingTimer = 0;
     pendingUnlock = null;
     attempts++;
-    console.info('[modal-dispatch] execute-attempt', interaction?.prompt, { area: TV.state.area, modalOpen: TV.state.modalOpen, locked: document.pointerLockElement === TV.renderer?.domElement });
     if (!canRun(interaction)) {
       lastDrop = 'dispatch-no-longer-valid';
-      console.info('[modal-dispatch] dropped', interaction?.prompt, lastDrop);
       return;
     }
     dispatches++;
@@ -84,9 +70,7 @@
     lastError = null;
     lastDrop = null;
     try {
-      console.info('[modal-dispatch] target-before', lastPrompt);
       runOriginal(interaction, original, args);
-      console.info('[modal-dispatch] target-after', lastPrompt, { modalOpen: TV.state.modalOpen, overlay: Boolean(document.querySelector('.life-overlay,.ohx,.mb-overlay,#build-controls,#ohbuild,#bl-controls')), renderPaused: TV.state.pausedByVisibility });
     } catch (error) {
       lastError = String(error?.stack || error?.message || error);
       console.error('Toon Valley deferred interaction failed', error);
@@ -120,7 +104,6 @@
         return;
       }
       if (document.pointerLockElement !== TV.renderer?.domElement) {
-        console.info('[modal-dispatch] unlock-observed', interaction.prompt, Math.round(performance.now() - startedAt));
         pendingTimer = setTimeout(() => execute(interaction, original, args), 0);
         return;
       }
@@ -147,7 +130,6 @@
     pendingUnlock = interaction;
     lastPrompt = interaction.prompt || 'Interact';
     lastDrop = null;
-    console.info('[modal-dispatch] scheduled', lastPrompt, schedules);
     pendingTimer = setTimeout(() => beginPointerUnlock(interaction, original, args), 0);
   }
 
@@ -212,8 +194,9 @@
     queuedActionsSurviveBlur: true,
     recursionGuard: true,
     observableUnlockPolling: true,
-    pausesRenderWorkForModal: true,
-    preModalRenderSuspension: true,
+    keepsRenderWorkDuringModal: true,
+    pausesRenderWorkForModal: false,
+    preModalRenderSuspension: false,
     pending: () => Boolean(pendingTimer || pendingUnlock),
     wrappedCount: () => wrappedCount,
     scheduleCount: () => schedules,
