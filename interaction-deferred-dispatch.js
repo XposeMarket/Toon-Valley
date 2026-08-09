@@ -59,9 +59,9 @@
     dispatches++;
     if (modal) {
       modalDispatches++;
-      // Arm pause suppression before the interaction has any chance to call the
-      // browser's native exitPointerLock(). This is especially important for older
-      // modal helpers that release Pointer Lock before their DOM is appended.
+      // Arm pause suppression before the interaction has any chance to release
+      // browser Pointer Lock. This also protects older modal helpers that unlock
+      // before their DOM is appended.
       window.ToonValleyPointerGuard?.armResumeAfterModal?.();
     }
     lastPrompt = interaction.prompt || 'Interact';
@@ -71,7 +71,7 @@
       // Preserve every registered interaction action exactly as authored. Physical
       // quest actions still flow through interaction-experience.js; this dispatcher
       // only moves desktop E execution from keydown to the matching keyup so the
-      // browser input task has settled before a modal releases Pointer Lock.
+      // browser input task has settled before a modal changes Pointer Lock state.
       interaction.action();
       if (modal && !TV.state.modalOpen) window.ToonValleyPointerGuard?.syncPauseAfterModal?.();
     } catch (error) {
