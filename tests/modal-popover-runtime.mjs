@@ -46,11 +46,14 @@ async function diagnostics() {
   }));
 }
 
+async function realKeyStroke(code, label) {
+  await Promise.race([page.keyboard.down(code), deadline(3000, `${label}: keydown hung`)]);
+  await wait(70);
+  await Promise.race([page.keyboard.up(code), deadline(3000, `${label}: keyup hung`)]);
+}
+
 async function openNearestWithE(label) {
-  await Promise.race([
-    page.keyboard.press('KeyE'),
-    deadline(3000, `${label}: KeyE dispatch hung`)
-  ]);
+  await realKeyStroke('KeyE', label);
   await wait(100);
   const afterPress = await diagnostics();
   console.log(`[modal-popover] ${label} post-KeyE`, afterPress);
@@ -123,10 +126,7 @@ try {
   checkpoint('shop catalog popover stable after E keyup');
   await closeResume(shopTarget.prompt);
 
-  await Promise.race([
-    page.keyboard.press('KeyT'),
-    deadline(3000, 'KeyT input dispatch hung while opening ToonPhone')
-  ]);
+  await realKeyStroke('KeyT', 'KeyT ToonPhone');
   await page.waitForSelector('.life-overlay', { timeout: 6000 });
   await page.waitForFunction(() => !document.pointerLockElement && window.ToonValley.state.modalOpen === true, null, { timeout: 6000 });
   await page.click('[data-tab="inventory"]');
@@ -137,7 +137,7 @@ try {
   checkpoint('ToonPhone replacement stable');
 
   if (errors.length) throw new Error(errors.join('\n'));
-  console.log(`Toon Valley modal/popover lifecycle passed with post-keyup interactions and real Pointer Lock: ${remoteURL || 'localhost'}`, { homeTarget, shopTarget, guard });
+  console.log(`Toon Valley modal/popover lifecycle passed with real keydown/keyup and Pointer Lock: ${remoteURL || 'localhost'}`, { homeTarget, shopTarget, guard });
 } finally {
   await browser.close();
   server?.kill('SIGTERM');
