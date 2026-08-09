@@ -21,10 +21,6 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 760 } });
 page.setDefaultTimeout(10000);
 page.setDefaultNavigationTimeout(45000);
 
-// Use the same deterministic Pointer Lock shim as the established desktop
-// navigation smoke test. Synchronous pointerlockchange delivery mirrors the
-// observable browser state while keeping Chromium's headless DevTools channel
-// responsive; the game dispatcher itself no longer relies on event ordering.
 await page.addInitScript(() => {
   try {
     Object.defineProperty(Document.prototype, 'pointerLockElement', {
@@ -45,9 +41,17 @@ await page.addInitScript(() => {
 
 const errors = [];
 page.on('pageerror', (error) => errors.push(`pageerror: ${error.stack || error.message}`));
-page.on('console', (message) => { if (message.type() === 'error') errors.push(`console: ${message.text()}`); });
+page.on('console', (message) => {
+  const text = message.text();
+  if (text.startsWith('[modal-dispatch]')) console.log(`[browser] ${text}`);
+  if (message.type() === 'error') errors.push(`console: ${text}`);
+});
 const checkpoint = (label) => console.log(`[modal-popover] ${label}`);
 const modalSelector = '.life-overlay,.ohx,.mb-overlay,#build-controls,#ohbuild,#bl-controls';
+const watchdog = setTimeout(() => {
+  console.error('[modal-popover] watchdog: browser interaction stopped responding for 25 seconds');
+  process.exit(86);
+}, 25000);
 
 async function diagnostics() {
   return page.evaluate((selector) => {
@@ -123,7 +127,9 @@ async function openCurrentInteraction(label) {
   }
 
   await page.waitForFunction((previous) => window.ToonValleyDeferredInteractionDispatch.dispatchCount() > previous, before.dispatches, { timeout: 4000 });
+  checkpoint(`${label} dispatch completed`);
   await page.waitForFunction((selector) => Boolean(document.querySelector(selector)) && window.ToonValley.state.modalOpen === true, modalSelector, { timeout: 4000 });
+  checkpoint(`${label} overlay visible`);
   await page.waitForFunction(() => !document.pointerLockElement, null, { timeout: 4000 });
   const state = await diagnostics();
   console.log(`[modal-popover] ${label} opened`, state);
@@ -136,11 +142,15 @@ async function openCurrentInteraction(label) {
 }
 
 async function closeCurrentModal(label) {
+  checkpoint(`${label} closing`);
   await page.locator('.life-close,[data-close]').first().click();
   await page.waitForFunction((selector) => !document.querySelector(selector) && window.ToonValley.state.modalOpen === false, modalSelector, { timeout: 6000 });
+  checkpoint(`${label} closed`);
   await page.waitForFunction(() => !document.getElementById('pause-screen').classList.contains('hidden'), null, { timeout: 6000 });
+  checkpoint(`${label} resume prompt visible`);
   await page.click('#resume-button');
   await requireGamePointerLock(`${label} resume`);
+  checkpoint(`${label} resumed`);
 }
 
 try {
@@ -182,6 +192,7 @@ try {
   if (errors.length) throw new Error(errors.join('\n'));
   console.log('Toon Valley modal/popover lifecycle passed', { base: remoteURL || 'localhost', capabilities, final: await diagnostics() });
 } finally {
+  clearTimeout(watchdog);
   await browser.close();
   server?.kill('SIGTERM');
 }
