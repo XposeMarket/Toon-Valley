@@ -13,8 +13,9 @@ const dispatchSource = readFileSync(new URL('../interaction-deferred-dispatch.js
 if (!/dispatchNearestModal/.test(dispatchSource) || !/preservesPhysicalActionPath:\s*true/.test(dispatchSource)) throw new Error('Shared modal handoff invariant missing');
 if (/interaction\.action\s*=/.test(dispatchSource)) throw new Error('Modal safety must not mutate registered interaction actions');
 if (/style\.display\s*=\s*['"]none['"]/.test(dispatchSource)) throw new Error('Modal safety must never display:none the WebGL surface');
-if (/style\.visibility\s*=\s*['"]hidden['"]/.test(dispatchSource) || /pausedByVisibility\s*=\s*true/.test(dispatchSource)) throw new Error('Pointer Lock release must not hide or pause the live WebGL scene');
-if (!/transientRenderQuiesce:\s*false/.test(dispatchSource) || !/preUnlockRenderQuiesce:\s*false/.test(dispatchSource) || !/transientCanvasDetach:\s*false/.test(dispatchSource)) throw new Error('Pointer Lock handoff must keep rendering and canvas mounted');
+if (/style\.visibility\s*=\s*['"]hidden['"]/.test(dispatchSource) || /pausedByVisibility\s*=\s*true/.test(dispatchSource)) throw new Error('Pointer Lock release must not hide or visibility-pause the live WebGL scene');
+if (!/webglOnlyTransitionQuiesce:\s*true/.test(dispatchSource) || !/keepsCanvasMountedDuringUnlock:\s*true/.test(dispatchSource) || !/mutatesVisibilityStateDuringUnlock:\s*false/.test(dispatchSource)) throw new Error('Unlock handoff must use only a short WebGL-submit quiesce while keeping the canvas mounted');
+if (!/transientCanvasDetach:\s*false/.test(dispatchSource)) throw new Error('Pointer Lock handoff must never detach the canvas');
 if (!/releasesPointerLockWithinInputEvent:\s*true/.test(dispatchSource)) throw new Error('Modal Pointer Lock release must begin inside the captured input task');
 
 const softwareWebGLArgs = ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'];
@@ -51,6 +52,7 @@ async function state() {
       pending: window.ToonValleyDeferredInteractionDispatch.pending(),
       handoffArmed: window.ToonValleyDeferredInteractionDispatch.handoffArmed?.() || false,
       renderQuiesced: window.ToonValleyDeferredInteractionDispatch.renderQuiesced(),
+      quiesceCount: window.ToonValleyDeferredInteractionDispatch.quiesceCount(),
       canvasDetached: window.ToonValleyDeferredInteractionDispatch.canvasDetached(),
       lastPrompt: window.ToonValleyDeferredInteractionDispatch.lastPrompt(),
       lastError: window.ToonValleyDeferredInteractionDispatch.lastError(),
@@ -90,11 +92,11 @@ async function cycle(label) {
   }
   const opened = await state();
   if (opened.locked || !opened.modalOpen || !opened.overlay || !opened.pauseHidden || opened.renderPaused || opened.canvasVisibility === 'hidden' || !opened.resumePending || !opened.modalVisible || opened.suppressedUnlocks < 1) throw new Error(`${label}: bad open state ${JSON.stringify(opened)}`);
-  if (!opened.d || opened.d.interceptions <= before.d.interceptions || opened.d.schedules <= before.d.schedules || opened.d.dispatches <= before.d.dispatches || opened.d.attempts < 1 || opened.d.lastError || opened.d.lastDrop || opened.d.renderQuiesced || opened.d.canvasDetached || opened.d.handoffArmed) throw new Error(`${label}: dispatcher failed ${JSON.stringify(opened.d)}`);
+  if (!opened.d || opened.d.interceptions <= before.d.interceptions || opened.d.schedules <= before.d.schedules || opened.d.dispatches <= before.d.dispatches || opened.d.attempts < 1 || opened.d.lastError || opened.d.lastDrop || opened.d.renderQuiesced || opened.d.canvasDetached || opened.d.handoffArmed || opened.d.quiesceCount <= before.d.quiesceCount) throw new Error(`${label}: dispatcher failed ${JSON.stringify(opened.d)}`);
   const frameA = await page.evaluate(() => window.ToonValley.renderer.info.render.frame);
   await wait(250);
   const frameB = await page.evaluate(() => window.ToonValley.renderer.info.render.frame);
-  if (frameB <= frameA) throw new Error(`${label}: renderer stalled ${frameA}->${frameB}`);
+  if (frameB <= frameA) throw new Error(`${label}: renderer stalled after unlock ${frameA}->${frameB}`);
   const clicked = await page.evaluate(() => {
     const b = document.querySelector('.life-close,[data-close],.mb-btn.close'); if (!b) return false; b.click(); return true;
   });
@@ -129,7 +131,9 @@ try {
     shared: window.ToonValleyDeferredInteractionDispatch.sharedModalHandoff,
     sentinel: window.ToonValleyDeferredInteractionDispatch.modalHandoffSentinel,
     inInput: window.ToonValleyDeferredInteractionDispatch.releasesPointerLockWithinInputEvent,
-    noQuiesce: !window.ToonValleyDeferredInteractionDispatch.transientRenderQuiesce && !window.ToonValleyDeferredInteractionDispatch.preUnlockRenderQuiesce,
+    transitionQuiesce: window.ToonValleyDeferredInteractionDispatch.webglOnlyTransitionQuiesce,
+    mounted: window.ToonValleyDeferredInteractionDispatch.keepsCanvasMountedDuringUnlock,
+    noVisibilityMutation: !window.ToonValleyDeferredInteractionDispatch.mutatesVisibilityStateDuringUnlock,
     noDetach: !window.ToonValleyDeferredInteractionDispatch.transientCanvasDetach,
     preserveActions: window.ToonValleyDeferredInteractionDispatch.preservesInteractionActions,
     preservePhysical: window.ToonValleyDeferredInteractionDispatch.preservesPhysicalActionPath,
