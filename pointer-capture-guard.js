@@ -80,9 +80,11 @@
     clearTimeout(observeTimer);
     if (gamePointerLocked()) {
       const startedAt = performance.now();
-      // Pointer Lock exit is deliberately outside the keyboard event stack. The
-      // action is released exactly once only after the browser exposes the
-      // unlocked state, via pointerlockchange or the state observer fallback.
+      // Arm the observer before asking Chromium to exit Pointer Lock. In some
+      // WebGL/Pointer-Lock paths the native exit can abandon the remainder of the
+      // current task even though the page stays alive; pre-arming this callback
+      // guarantees the modal handoff survives that transition.
+      observeTimer = setTimeout(() => observeUnlock(startedAt), 12);
       unlockTimer = setTimeout(() => {
         unlockTimer = 0;
         try {
@@ -91,10 +93,10 @@
         } catch (error) {
           interactionUnlockPending = false;
           pendingModalAction = null;
+          clearTimeout(observeTimer);
+          observeTimer = 0;
           console.error('Unable to release Pointer Lock before modal interaction', error);
-          return;
         }
-        observeTimer = setTimeout(() => observeUnlock(startedAt), 12);
       }, 0);
       return true;
     }
@@ -140,6 +142,7 @@
     preflightModalUnlock: true,
     deferredPointerLockExit: true,
     observedUnlockFallback: true,
+    prearmedUnlockObserver: true,
     ownsModalActionHandoff: true,
     modalVisible: modalUIVisible,
     prepareModalInteraction,
