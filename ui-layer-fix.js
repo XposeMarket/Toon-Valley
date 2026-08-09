@@ -11,7 +11,7 @@
     #life-hud .life-actions{z-index:4!important;pointer-events:auto!important}
     #life-hud .life-actions button{pointer-events:auto!important;position:relative;z-index:5}
     .overlay{z-index:10000!important}
-    .life-overlay,.mb-overlay,.ohx{z-index:12000!important}
+    .life-overlay,.mb-overlay,.ohx{z-index:12000!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
     #build-controls,#ohbuild,#bl-controls{z-index:13000!important}
     #tv-desktop-dock{position:fixed;z-index:460;right:18px;bottom:18px;display:flex;gap:8px;pointer-events:auto;font:900 12px system-ui}
     #tv-desktop-dock button{border:3px solid #172027;border-radius:13px;background:#fff4cf;color:#172027;box-shadow:0 4px 0 #172027;padding:9px 12px;font:900 12px system-ui;cursor:pointer}
@@ -37,8 +37,6 @@
     if(!Life?.openPhone)return;
     pendingTab=null;
     clearTimeout(releaseTimer);
-    // modalOpen is used only as a guard while Pointer Lock is being released.
-    // Clear that temporary guard before asking life.js to build its real modal.
     if(TV.state.modalOpen&&!document.querySelector('.life-overlay,.mb-overlay,.ohx'))TV.setModalOpen(false);
     document.getElementById('pause-screen')?.classList.add('hidden');
     requestAnimationFrame(()=>Life.openPhone(tab));
@@ -54,7 +52,6 @@
       window.ToonValleyLife?.openPhone?.(tab);
       return;
     }
-    // Recover from a stale guard left by an interrupted pointer-lock transition.
     if(TV.state.modalOpen&&!document.querySelector('.life-overlay,.mb-overlay,.ohx'))TV.setModalOpen(false);
     if(TV.state.modalOpen)return;
     if(document.pointerLockElement){
@@ -84,6 +81,6 @@
     openTab(tab);
   },true);
 
-  window.ToonValleyUILayerFix=Object.freeze({active:true,styleId:style.id,desktopShortcuts:{phone:'P',inventory:'I',tasks:'T'},pointerLockSafe:true,desktopDock:true,openTab});
+  window.ToonValleyUILayerFix=Object.freeze({active:true,styleId:style.id,desktopShortcuts:{phone:'P',inventory:'I',tasks:'T'},pointerLockSafe:true,desktopDock:true,gpuSafePopoverCompositing:true,openTab});
   console.info('Toon Valley UI layer fix ready');
 })();
