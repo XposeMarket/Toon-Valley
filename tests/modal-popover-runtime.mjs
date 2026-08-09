@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import process from 'node:process';
 
 const remoteURL = process.env.BASE_URL?.replace(/\/$/, '');
+const headedPointerLock = process.env.HEADFUL_POINTERLOCK === '1';
 const server = remoteURL ? null : spawn('python3', ['-m', 'http.server', '4191', '--bind', '127.0.0.1'], { stdio: ['ignore', 'pipe', 'pipe'] });
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 if (server) await wait(900);
@@ -14,7 +15,7 @@ if (/interaction\.action\s*=/.test(dispatchSource)) throw new Error('Modal safet
 if (/style\.display\s*=\s*['"]none['"]/.test(dispatchSource)) throw new Error('Modal safety must not remove the WebGL surface');
 if (!/transientRenderQuiesce:\s*true/.test(dispatchSource) || !/preUnlockRenderQuiesce:\s*true/.test(dispatchSource)) throw new Error('Pointer Lock release must quiesce rendering only during the transition');
 
-const browser = await chromium.launch({ headless: true, args: ['--use-gl=swiftshader', '--enable-webgl'] });
+const browser = await chromium.launch({ headless: !headedPointerLock, args: ['--use-gl=swiftshader', '--enable-webgl'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 760 } });
 page.setDefaultTimeout(10000);
 page.setDefaultNavigationTimeout(45000);
@@ -116,7 +117,7 @@ try {
   await move('furnitureStore', 'Browse furniture catalog'); await lock('furniture'); await cycle('furniture');
   await move('generalStore', 'Browse counter'); await lock('store'); await cycle('store');
   if (errors.length) throw new Error(errors.join('\n'));
-  console.log('Toon Valley modal/popover lifecycle passed', await state());
+  console.log('Toon Valley modal/popover lifecycle passed', { headedPointerLock, final: await state() });
 } finally {
   await browser.close();
   server?.kill('SIGTERM');
