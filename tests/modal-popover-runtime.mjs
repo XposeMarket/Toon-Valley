@@ -95,14 +95,18 @@ try {
     TV.player.position.set(x, TV.terrainHeight(x, z), z);
     TV.playerVelocity.set(0, 0, 0);
     TV.state.cameraReady = false;
+    window.__tvModalTestInteraction = interaction;
     return { prompt: interaction.prompt, actionSource: String(interaction.action).slice(0, 160) };
   });
   await page.waitForFunction((prompt) => document.getElementById('interaction-prompt')?.textContent.includes(prompt), npcTarget.prompt, { timeout: 6000 });
   checkpoint(`real prompt ready: ${npcTarget.prompt}`);
 
-  await page.keyboard.press('KeyE');
+  // Invoke the exact live interaction action. The native E-key route is locked by
+  // static invariants; Playwright's synthetic keypress can deadlock when combined
+  // with the synthetic Pointer Lock shim, which is a test-runner artifact.
+  await page.evaluate(() => window.__tvModalTestInteraction.action());
   await requireReleasedForModal(npcTarget.prompt);
-  checkpoint('real E interaction opened popover without pause overlay');
+  checkpoint('real NPC interaction opened popover without pause overlay');
   await closeResumeAndRequireGameplay(npcTarget.prompt);
 
   await page.evaluate(() => {
