@@ -7,6 +7,7 @@ const remoteURL = process.env.BASE_URL?.replace(/\/$/, '');
 const server = remoteURL ? null : spawn('python3', ['-m', 'http.server', '4191', '--bind', '127.0.0.1'], { stdio: ['ignore', 'pipe', 'pipe'] });
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 if (server) await wait(900);
+const stage = (name, data = '') => console.log(`[modal-popover] ${name}`, data);
 
 const dispatchSource = readFileSync(new URL('../interaction-deferred-dispatch.js', import.meta.url), 'utf8');
 if (/addEventListener\(\s*['"]key(?:down|up)['"]/.test(dispatchSource) || /stopImmediatePropagation/.test(dispatchSource)) {
@@ -29,8 +30,10 @@ page.on('pageerror', (error) => errors.push(`pageerror: ${error.stack || error.m
 page.on('console', (message) => { if (message.type() === 'error') errors.push(`console: ${message.text()}`); });
 page.on('crash', () => errors.push('page crash: Chromium renderer process crashed'));
 const modalSelector = '.life-overlay,.ohx,.mb-overlay,#build-controls,#ohbuild,#bl-controls';
+let currentStage = 'boot';
+const mark = (name, data = '') => { currentStage = name; stage(name, data); };
 const watchdog = setTimeout(() => {
-  console.error('[modal-popover] watchdog: browser interaction stopped responding for 40 seconds');
+  console.error(`[modal-popover] watchdog at stage "${currentStage}": browser interaction stopped responding for 40 seconds`);
   process.exit(86);
 }, 40000);
 
@@ -66,17 +69,21 @@ async function diagnostics() {
 }
 
 async function requireGamePointerLock(label) {
+  mark(`${label}: wait pointer lock`);
   try {
     await page.waitForFunction(() => document.pointerLockElement === window.ToonValley?.renderer?.domElement, null, { timeout: 2500, polling: 50 });
   } catch {
-    await page.locator('#game canvas').click({ position: { x: 640, y: 380 } });
+    mark(`${label}: fallback canvas click`);
+    await page.locator('#game canvas').click({ position: { x: 640, y: 380 }, timeout: 5000, noWaitAfter: true });
     await page.waitForFunction(() => document.pointerLockElement === window.ToonValley?.renderer?.domElement, null, { timeout: 4000, polling: 50 });
   }
   const state = await diagnostics();
   if (!state.gamePointerLocked) throw new Error(`${label}: real game Pointer Lock was not active ${JSON.stringify(state)}`);
+  mark(`${label}: pointer lock active`);
 }
 
 async function moveToInteraction(area, prompt) {
+  mark(`${prompt}: move into range`);
   await page.evaluate(({ area, prompt }) => {
     const TV = window.ToonValley;
     TV.enterInterior(area, { x: 0, z: 10 });
@@ -90,13 +97,10 @@ async function moveToInteraction(area, prompt) {
   await page.evaluate(() => window.ToonValleyDeferredInteractionDispatch.scan());
   const state = await diagnostics();
   if (!state.nearestWrapped) throw new Error(`${prompt}: nearest interaction was not modal-safe wrapped ${JSON.stringify(state)}`);
+  mark(`${prompt}: in range and wrapped`);
 }
 
 async function fireInteractKey() {
-  // Playwright/CDP can deadlock a synthetic keyup if Pointer Lock is intentionally
-  // released between its keydown and keyup commands. Dispatch the same DOM events
-  // directly so the core game key handler still owns KeyE while the browser's
-  // Pointer Lock transition remains independently observable.
   await page.evaluate(() => {
     const init = { key: 'e', code: 'KeyE', keyCode: 69, which: 69, bubbles: true, cancelable: true };
     document.dispatchEvent(new KeyboardEvent('keydown', init));
@@ -109,9 +113,12 @@ async function openCurrentInteraction(label) {
     schedules: window.ToonValleyDeferredInteractionDispatch.scheduleCount(),
     dispatches: window.ToonValleyDeferredInteractionDispatch.dispatchCount()
   }));
+  mark(`${label}: fire interact`, JSON.stringify(before));
   await fireInteractKey();
   await page.waitForFunction((previous) => window.ToonValleyDeferredInteractionDispatch.scheduleCount() > previous, before.schedules, { timeout: 4000, polling: 50 });
+  mark(`${label}: dispatch scheduled`);
   await page.waitForFunction((selector) => window.ToonValley.state.modalOpen && Boolean(document.querySelector(selector)), modalSelector, { timeout: 6000, polling: 50 });
+  mark(`${label}: modal visible`);
   const state = await diagnostics();
   if (!state.dispatcher || state.dispatcher.wrapped < 2 || state.dispatcher.schedules <= before.schedules || state.dispatcher.attempts < 1 || state.dispatcher.dispatches <= before.dispatches || state.dispatcher.lastError || state.dispatcher.lastDrop) {
     throw new Error(`${label}: modal-safe action regression ${JSON.stringify(state)}`);
@@ -123,9 +130,11 @@ async function openCurrentInteraction(label) {
   await wait(250);
   const frameB = await page.evaluate(() => window.ToonValley.renderer.info.render.frame);
   if (frameB <= frameA) throw new Error(`${label}: renderer stopped advancing while modal was open (${frameA} -> ${frameB})`);
+  mark(`${label}: renderer live in modal`, `${frameA}->${frameB}`);
 }
 
 async function closeCurrentModal(label) {
+  mark(`${label}: close modal`);
   const clicked = await page.evaluate(() => {
     const button = document.querySelector('.life-close,[data-close]');
     if (!button) return false;
@@ -138,12 +147,27 @@ async function closeCurrentModal(label) {
   if (closed.overlay || closed.modalOpen || closed.renderPaused || closed.webglSurfaceHidden || closed.pauseHidden) {
     throw new Error(`${label}: modal did not restore resume state ${JSON.stringify(closed)}`);
   }
-  await page.click('#resume-button');
+  mark(`${label}: pause resume visible`);
+
+  // Do not keep a Playwright mouse command open across requestPointerLock().
+  // Trigger the same button handler in-page, then observe the browser state.
+  await page.evaluate(() => document.getElementById('resume-button')?.click());
+  mark(`${label}: resume handler fired`);
+  try {
+    await page.waitForFunction(() => document.pointerLockElement === window.ToonValley?.renderer?.domElement, null, { timeout: 2500, polling: 50 });
+  } catch {
+    // Programmatic click may lack user activation in stricter Chromium builds.
+    // A bounded trusted canvas click proves the real user reacquisition path.
+    mark(`${label}: trusted resume fallback`);
+    await page.locator('#game canvas').click({ position: { x: 640, y: 380 }, timeout: 5000, noWaitAfter: true });
+  }
   await requireGamePointerLock(`${label} resume`);
 }
 
 try {
+  mark('navigate');
   await page.goto(remoteURL || 'http://127.0.0.1:4191', { waitUntil: 'domcontentloaded' });
+  mark('wait runtime');
   await page.waitForFunction(() => window.ToonValley && window.ToonValleyLife && window.ToonValleyPointerGuard && window.ToonValleyDeferredInteractionDispatch && window.ToonValleyUILayerFix, null, { timeout: 30000, polling: 50 });
   const capabilities = await page.evaluate(() => ({
     nativeModalExit: window.ToonValleyPointerGuard.nativeModalExit,
@@ -160,12 +184,15 @@ try {
     touchModalSafety: window.ToonValleyDeferredInteractionDispatch.touchModalSafety,
     recursionGuard: window.ToonValleyDeferredInteractionDispatch.recursionGuard,
     observableUnlockPolling: window.ToonValleyDeferredInteractionDispatch.observableUnlockPolling,
+    eventDrivenUnlockHandoff: window.ToonValleyDeferredInteractionDispatch.eventDrivenUnlockHandoff,
+    raceSafeSingleDispatch: window.ToonValleyDeferredInteractionDispatch.raceSafeSingleDispatch,
     keepsRenderWorkDuringDispatch: window.ToonValleyDeferredInteractionDispatch.keepsRenderWorkDuringModal,
     gpuSafePopoverCompositing: window.ToonValleyUILayerFix.gpuSafePopoverCompositing
   }));
   if (!Object.values(capabilities).every(Boolean)) throw new Error(`Missing modal/input capabilities ${JSON.stringify(capabilities)}`);
+  mark('runtime capabilities ready');
 
-  await page.click('#play-button');
+  await page.click('#play-button', { timeout: 5000, noWaitAfter: true });
   await page.waitForFunction(() => window.ToonValley.state.started === true, null, { timeout: 6000, polling: 50 });
   await requireGamePointerLock('initial play');
 
