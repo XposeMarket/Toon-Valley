@@ -22,25 +22,15 @@
   `;
   document.head.appendChild(style);
 
-  const modalSelector='.life-overlay,.mb-overlay,.ohx,#build-controls,#ohbuild,#bl-controls';
-  const nativeRender=TV.renderer.render.bind(TV.renderer);
+  // Do not intercept or suspend renderer.render for UI. Chromium/WebGL stacks can
+  // become unstable when a hot render function is replaced while Pointer Lock and
+  // composited fixed overlays transition in the same task. The game already gates
+  // input/update behavior through modalOpen; continuing normal draws keeps the
+  // WebGL context alive and avoids the apparent "popover crash"/frozen canvas.
   let modalTransition=false;
-  let suppressedFrames=0;
-  const overlayVisible=()=>Boolean(document.querySelector(modalSelector));
-  function beginPopoverTransition(){modalTransition=true;}
-  function endPopoverTransition(){
-    // Keep the pre-composition freeze through the current task. On the next frame
-    // an established overlay is detected by selector; if no modal appeared, draws
-    // resume immediately instead of leaving the game frozen after an error/no-op.
-    requestAnimationFrame(()=>{modalTransition=false;});
-  }
-  TV.renderer.render=function(scene,camera){
-    if(modalTransition||(TV.state.modalOpen&&overlayVisible())){
-      suppressedFrames++;
-      return;
-    }
-    return nativeRender(scene,camera);
-  };
+  let transitions=0;
+  function beginPopoverTransition(){modalTransition=true;transitions++;}
+  function endPopoverTransition(){requestAnimationFrame(()=>{modalTransition=false;});}
 
   const dock=document.createElement('div');
   dock.id='tv-desktop-dock';
@@ -112,13 +102,15 @@
     pointerLockSafe:true,
     desktopDock:true,
     gpuSafePopoverCompositing:true,
-    freezesWebGLDrawsUnderModal:true,
-    prefreezesBeforeModalConstruction:true,
+    keepsWebGLRenderingUnderModal:true,
+    freezesWebGLDrawsUnderModal:false,
+    replacesRendererRender:false,
     canvasRemainsMounted:true,
     beginPopoverTransition,
     endPopoverTransition,
     transitionPending:()=>modalTransition,
-    suppressedFrames:()=>suppressedFrames,
+    transitionCount:()=>transitions,
+    suppressedFrames:()=>0,
     openTab
   });
   console.info('Toon Valley UI layer fix ready');
