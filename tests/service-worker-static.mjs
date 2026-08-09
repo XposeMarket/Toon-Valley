@@ -24,9 +24,11 @@ if (guardIndex < 0 || navigateIndex < guardIndex) throw new Error('Stale-client 
 const requiredGuard = [
   'explicitResumeAfterModal: true',
   'modalPauseSuppression: true',
-  'modalExitSynchronous',
+  'modalExitDeferred',
   '__toonValleyModalExitGuard',
   'releaseModalPointerLock',
+  'releaseQueued',
+  'setTimeout(() =>',
   'revealResumeAfterModal',
   "document.addEventListener('pointerlockchange'",
   'event.stopImmediatePropagation()',
@@ -41,11 +43,12 @@ if (guard.includes('preflightModalInteraction') || guard.includes('pendingIntera
   throw new Error('Popover guard must not intercept or replay core physical/UI interaction input');
 }
 if (guard.includes('requestPointerLock')) throw new Error('Popover close path must not request Pointer Lock from the closing dialog event');
-if (guard.includes('modalExitDeferred') || guard.includes('__toonValleyDeferredModalExit') || guard.includes('modalExitTimer')) {
-  throw new Error('Popover Pointer Lock release must not depend on the removed deferred/timer path');
+if (guard.includes('__toonValleyDeferredModalExit') || guard.includes('modalExitTimer')) {
+  throw new Error('Popover Pointer Lock release must use the shared deferred release queue, not a duplicate legacy timer path');
 }
 if (!guard.includes("if (window.ToonValley?.state?.modalOpen)")) throw new Error('Modal Pointer Lock exit must be scoped to active modal UI');
 if (!guard.includes("if (TV.state.modalOpen || modalUIVisible())")) throw new Error('Pause suppression must be scoped to visible/active modal UI');
-if (!guard.includes('return nativeExitPointerLock.call(this)')) throw new Error('Active modal Pointer Lock release must execute the captured native exit synchronously');
+if (!guard.includes('nativeExitPointerLock?.call(doc)')) throw new Error('Deferred modal Pointer Lock release must execute the captured native exit');
+if (!guard.includes('return nativeExitPointerLock.call(this)')) throw new Error('Ordinary non-modal Pointer Lock exits must remain native and synchronous');
 
 console.log('Toon Valley service-worker stale-upgrade and shared modal lifecycle invariants passed.');
