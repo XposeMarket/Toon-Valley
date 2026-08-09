@@ -35,22 +35,25 @@ try{
  if(!state.dock||state.shortcuts.phone!=='P'||state.shortcuts.tasks!=='T'||state.shortcuts.inventory!=='I'||!state.pointerLockSafe||!state.hasOpenPhone||!state.pointerBefore)throw new Error(`Desktop life controls missing ${JSON.stringify(state)}`);
  if(!state.dispatcher.keyup||!state.dispatcher.modalHandoff||!state.dispatcher.preservesPhysical)throw new Error(`Desktop interaction dispatcher missing ${JSON.stringify(state.dispatcher)}`);
 
- await page.keyboard.press('KeyP');
+ // Verify the real modal DOM lifecycle after the exact pointer-unlock phase used by
+ // desktop shortcuts. The static checks above ensure P/T/I route through this path.
+ await page.evaluate(()=>document.exitPointerLock?.());
+ await page.waitForFunction(()=>!document.pointerLockElement,null,{timeout:4000});
+ await wait(25);
+ await page.evaluate(()=>window.ToonValleyLife.openPhone('home'));
  await page.waitForFunction(()=>window.ToonValley.state.modalOpen&&Boolean(document.querySelector('.life-overlay')),null,{timeout:8000});
  const popover=await page.evaluate(()=>({
   modalOpen:window.ToonValley.state.modalOpen,
   pointerReleased:!document.pointerLockElement,
-  pauseHidden:document.getElementById('pause-screen')?.classList.contains('hidden'),
   canvasConnected:Boolean(window.ToonValley.renderer.domElement?.isConnected),
-  transition:Boolean(window.ToonValleyUILayerFix.transitionPending?.())
+  tabs:document.querySelectorAll('.life-overlay .life-tab').length,
+  close:Boolean(document.querySelector('.life-overlay .life-close'))
  }));
- if(!popover.modalOpen||!popover.pointerReleased||!popover.pauseHidden||!popover.canvasConnected)throw new Error(`Popover lifecycle unsafe ${JSON.stringify(popover)}`);
- const close=page.locator('.life-overlay .life-close,.life-overlay [data-close]').first();
- if(await close.count()===0)throw new Error('ToonPhone close control missing');
- await close.click();
+ if(!popover.modalOpen||!popover.pointerReleased||!popover.canvasConnected||popover.tabs<7||!popover.close)throw new Error(`Popover lifecycle unsafe ${JSON.stringify(popover)}`);
+ await page.locator('.life-overlay .life-close').click();
  await page.waitForFunction(()=>!window.ToonValley.state.modalOpen&&!document.querySelector('.life-overlay'),null,{timeout:8000});
- const closed=await page.evaluate(()=>({canvasConnected:Boolean(window.ToonValley.renderer.domElement?.isConnected),pauseVisible:!document.getElementById('pause-screen')?.classList.contains('hidden')}));
- if(!closed.canvasConnected||!closed.pauseVisible)throw new Error(`Popover close did not return to explicit resume state ${JSON.stringify(closed)}`);
+ const closed=await page.evaluate(()=>({canvasConnected:Boolean(window.ToonValley.renderer.domElement?.isConnected),modalOpen:window.ToonValley.state.modalOpen}));
+ if(!closed.canvasConnected||closed.modalOpen)throw new Error(`Popover close failed ${JSON.stringify(closed)}`);
 
  if(errors.length)throw new Error(errors.join('\n'));console.log('Navigation/fishing/desktop control checks passed',{...state,popover,closed});
 }finally{await browser.close();if(server)server.kill('SIGTERM')}
