@@ -40,6 +40,7 @@ jobs:
           node --check valley-transit.js
           node --check community-garden.js
           node --check valley-community-life.js
+          node --check community-objectives.js
           node --check living-interiors.js
           node --check navigation-polish.js
           node --check side-quest-overhaul.js
