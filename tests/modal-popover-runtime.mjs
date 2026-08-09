@@ -15,6 +15,7 @@ const errors = [];
 page.on('pageerror', (error) => errors.push(`pageerror: ${error.stack || error.message}`));
 page.on('console', (message) => { if (message.type() === 'error') errors.push(`console: ${message.text()}`); });
 const checkpoint = (label) => console.log(`[modal-popover] ${label}`);
+const pressInteract = () => page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyE', key: 'e', bubbles: true, cancelable: true })));
 
 await page.addInitScript(() => {
   Object.defineProperty(Document.prototype, 'pointerLockElement', {
@@ -102,7 +103,7 @@ try {
   await page.waitForFunction((prompt) => document.getElementById('interaction-prompt')?.textContent.includes(prompt), npcTarget.prompt, { timeout: 6000 });
   checkpoint(`real prompt ready: ${npcTarget.prompt}`);
 
-  await page.keyboard.press('KeyE');
+  await pressInteract();
   await wait(300);
   const keyDiag = await page.evaluate(() => ({
     unlocks: window.ToonValleyInteractionInputPreflight.unlockCount(),
@@ -145,7 +146,7 @@ try {
   if (physicalTarget) {
     const relocksBefore = await page.evaluate(() => window.ToonValleyInteractionInputPreflight.physicalRelockCount());
     await page.waitForFunction((prompt) => document.getElementById('interaction-prompt')?.textContent.includes(prompt), physicalTarget.prompt, { timeout: 6000 });
-    await page.keyboard.press('KeyE');
+    await pressInteract();
     await page.waitForFunction((before) => window.ToonValleyInteractionInputPreflight.physicalRelockCount() > before && document.pointerLockElement === window.ToonValley.renderer.domElement, relocksBefore, { timeout: 6000 });
     if (await page.evaluate(() => window.ToonValley.state.modalOpen || Boolean(document.querySelector('.life-overlay')))) throw new Error('Physical E interaction unexpectedly opened modal UI');
     checkpoint('physical E interaction automatically restored Pointer Lock');
