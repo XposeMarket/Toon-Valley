@@ -1,9 +1,9 @@
 'use strict';
 
-const CACHE_NAME = 'toon-valley-v34';
+const CACHE_NAME = 'toon-valley-v35';
 const CORE = [
   './', './index.html', './style.css', './life.css', './game.js', './life.js',
-  './pointer-capture-guard.js', './interaction-input-preflight.js', './ui-layer-fix.js', './world-events.js', './town-activities.js',
+  './pointer-capture-guard.js', './ui-layer-fix.js', './world-events.js', './town-activities.js',
   './valley-services.js', './valley-routines.js', './central-plaza.js', './central-plaza-core.js',
   './public-interiors.js', './moonbeam-theater.js', './owned-home.js', './world-polish.js',
   './bluebell-lake.js', './interaction-world-fix.js', './valley-transit.js', './community-garden.js',
@@ -40,8 +40,6 @@ async function cacheFirst(request) {
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE_NAME);
-    // One unavailable optional CDN asset must never prevent a hotfix worker from
-    // installing and replacing a stale game shell.
     await Promise.allSettled(CORE.map((url) => cache.add(url)));
     await self.skipWaiting();
   })());
@@ -55,10 +53,6 @@ self.addEventListener('activate', (event) => {
     await Promise.all(oldReleaseCaches.map((key) => caches.delete(key)));
     await self.clients.claim();
 
-    // Only an actual upgrade from an older Toon Valley worker gets a forced
-    // navigation. Fresh installs remain passive during activation. Existing stale
-    // windows are already executing old JavaScript, so after the new worker claims
-    // them, navigate those windows once to load the current release.
     if (hadPriorRelease) {
       const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
       await Promise.allSettled(windows.map((client) => client.navigate(client.url)));
@@ -71,9 +65,5 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   const sameOrigin = url.origin === self.location.origin;
   const releaseCritical = event.request.mode === 'navigate' || (sameOrigin && /\.(?:html?|js|css|webmanifest)$/i.test(url.pathname));
-
-  // Navigation and executable release assets always prefer the network so a new
-  // deployment cannot be shadowed by yesterday's cached code. Offline play still
-  // falls back to the last verified cache. Images/immutable CDN assets stay fast.
   event.respondWith(releaseCritical ? networkFirst(event.request) : cacheFirst(event.request));
 });
