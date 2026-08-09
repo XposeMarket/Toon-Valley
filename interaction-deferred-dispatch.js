@@ -14,6 +14,7 @@
   let lastError = null;
   let lastDrop = null;
   const wrapped = new WeakMap();
+  const installed = new WeakSet();
 
   const opensModalUI = (interaction) => {
     const prompt = interaction?.prompt || '';
@@ -34,6 +35,17 @@
     interaction?.area === TV.state.area &&
     (!interaction.enabled || interaction.enabled());
 
+  function unwrapAction(action) {
+    const seen = new Set();
+    let current = action;
+    while (typeof current === 'function' && current.__toonValleyModalSafeWrapper && current.__toonValleyOriginalAction) {
+      if (seen.has(current)) throw new Error('Detected recursive Toon Valley modal interaction wrapper');
+      seen.add(current);
+      current = current.__toonValleyOriginalAction;
+    }
+    return current;
+  }
+
   function execute(interaction, original, args) {
     pendingTimer = 0;
     pendingUnlock = null;
@@ -42,12 +54,17 @@
       lastDrop = 'dispatch-no-longer-valid';
       return;
     }
+    const target = unwrapAction(original);
+    if (typeof target !== 'function') {
+      lastDrop = 'dispatch-missing-original';
+      return;
+    }
     dispatches++;
     lastPrompt = interaction.prompt || 'Interact';
     lastError = null;
     lastDrop = null;
     try {
-      original.apply(interaction, args);
+      target.apply(interaction, args);
     } catch (error) {
       lastError = String(error?.stack || error?.message || error);
       console.error('Toon Valley deferred interaction failed', error);
@@ -100,18 +117,28 @@
     pendingUnlock = interaction;
     lastPrompt = interaction.prompt || 'Interact';
     lastDrop = null;
-    // The core game remains the only owner of KeyE. Its normal interaction action
-    // calls this wrapper, which returns immediately. Pointer Lock is released from
-    // a fresh task after the keyboard event stack has completely unwound, and the
-    // original UI action runs only after the unlock transition has completed.
     pendingTimer = setTimeout(() => beginPointerUnlock(interaction, original, args), 0);
   }
 
   function wrapInteraction(interaction) {
     if (!interaction || !opensModalUI(interaction) || typeof interaction.action !== 'function') return false;
-    if (wrapped.get(interaction) === interaction.action) return false;
-    const original = interaction.action;
-    if (original.__toonValleyModalSafeWrapper) return false;
+
+    if (installed.has(interaction)) {
+      if (interaction.action === wrapped.get(interaction)) return false;
+      // A later system replaced the action. Preserve that replacement as the new
+      // original, but never stack one modal-safe wrapper around another.
+      installed.delete(interaction);
+    }
+
+    let original;
+    try {
+      original = unwrapAction(interaction.action);
+    } catch (error) {
+      lastError = String(error?.stack || error?.message || error);
+      console.error('Toon Valley modal wrapper chain was invalid', error);
+      return false;
+    }
+    if (typeof original !== 'function') return false;
 
     function modalSafeAction(...args) {
       if (!canDefer(interaction) || document.pointerLockElement !== TV.renderer?.domElement) {
@@ -124,6 +151,7 @@
     modalSafeAction.__toonValleyOriginalAction = original;
     interaction.action = modalSafeAction;
     wrapped.set(interaction, modalSafeAction);
+    installed.add(interaction);
     wrappedCount++;
     return true;
   }
@@ -151,6 +179,7 @@
     preservesInteractionActions: true,
     preservesPhysicalActionPath: true,
     queuedActionsSurviveBlur: true,
+    recursionGuard: true,
     pending: () => Boolean(pendingTimer || pendingUnlock),
     wrappedCount: () => wrappedCount,
     scheduleCount: () => schedules,
