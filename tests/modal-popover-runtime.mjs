@@ -12,7 +12,8 @@ const dispatchSource = readFileSync(new URL('../interaction-deferred-dispatch.js
 const guardSource = readFileSync(new URL('../pointer-capture-guard.js', import.meta.url), 'utf8');
 if (!/executesOnKeyup:\s*true/.test(dispatchSource)) throw new Error('Desktop interaction handoff must execute on KeyE keyup');
 if (!/preservesPhysicalActionPath:\s*true/.test(dispatchSource)) throw new Error('Physical action path invariant missing');
-if (/renderer\.render\s*=/.test(dispatchSource) || /exitPointerLock/.test(dispatchSource.replace(/nativePointerLockRelease/g, ''))) throw new Error('Desktop E dispatcher must not mutate rendering or release Pointer Lock itself');
+if (!/explicitPointerLockHandoff:\s*true/.test(dispatchSource) || !/actionRunsAfterUnlock:\s*true/.test(dispatchSource)) throw new Error('Modal Pointer Lock handoff invariant missing');
+if (!/document\.exitPointerLock/.test(dispatchSource) || dispatchSource.indexOf('document.exitPointerLock') > dispatchSource.indexOf('function runAction')) throw new Error('Dispatcher must own Pointer Lock release before modal action execution');
 if (/interaction\.action\s*=/.test(dispatchSource)) throw new Error('Desktop E safety must not replace registered interaction actions');
 if (!/!gamePointerLocked\(\)/.test(guardSource)) throw new Error('Modal resume guard must only arm from genuine gameplay Pointer Lock');
 
@@ -46,7 +47,9 @@ async function snapshot() {
       keyups: window.ToonValleyDeferredInteractionDispatch.keyupCount(),
       dispatches: window.ToonValleyDeferredInteractionDispatch.dispatchCount(),
       modalDispatches: window.ToonValleyDeferredInteractionDispatch.modalDispatchCount(),
+      pointerHandoffs: window.ToonValleyDeferredInteractionDispatch.pointerHandoffCount(),
       pending: window.ToonValleyDeferredInteractionDispatch.pending(),
+      handoffPending: window.ToonValleyDeferredInteractionDispatch.handoffPending(),
       lastPrompt: window.ToonValleyDeferredInteractionDispatch.lastPrompt(),
       lastError: window.ToonValleyDeferredInteractionDispatch.lastError(),
       lastDrop: window.ToonValleyDeferredInteractionDispatch.lastDrop()
@@ -79,7 +82,7 @@ async function openWithE(label) {
   await page.waitForFunction((selector) => window.ToonValley.state.modalOpen && Boolean(document.querySelector(selector)), modalSelector, { timeout: 7000 });
   const opened = await snapshot();
   if (!opened.modalOpen || !opened.overlay || !opened.pauseHidden || opened.resumePending) throw new Error(`${label}: unsafe unlocked modal state ${JSON.stringify(opened)}`);
-  if (!opened.dispatcher || opened.dispatcher.pending || opened.dispatcher.keyups <= before.dispatcher.keyups || opened.dispatcher.dispatches <= before.dispatcher.dispatches || opened.dispatcher.modalDispatches <= before.dispatcher.modalDispatches || opened.dispatcher.lastError || opened.dispatcher.lastDrop) {
+  if (!opened.dispatcher || opened.dispatcher.pending || opened.dispatcher.handoffPending || opened.dispatcher.keyups <= before.dispatcher.keyups || opened.dispatcher.dispatches <= before.dispatcher.dispatches || opened.dispatcher.modalDispatches <= before.dispatcher.modalDispatches || opened.dispatcher.lastError || opened.dispatcher.lastDrop) {
     throw new Error(`${label}: dispatcher failed ${JSON.stringify(opened.dispatcher)}`);
   }
 
@@ -99,11 +102,10 @@ async function closeModal(label) {
   if (!clicked) throw new Error(`${label}: close button missing`);
   await page.waitForFunction((selector) => !window.ToonValley.state.modalOpen && !document.querySelector(selector), modalSelector, { timeout: 5000 });
   const closed = await snapshot();
-  if (closed.modalOpen || closed.overlay || !closed.pauseHidden || closed.resumePending) throw new Error(`${label}: modal close left stale pause/resume state ${JSON.stringify(closed)}`);
+  if (closed.modalOpen || closed.overlay || !closed.pauseHidden || closed.resumePending || closed.dispatcher?.handoffPending) throw new Error(`${label}: modal close left stale pause/resume state ${JSON.stringify(closed)}`);
 }
 
 try {
-  console.log('modal-popover: navigating');
   await page.goto(remoteURL || 'http://127.0.0.1:4191', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.ToonValley && window.ToonValleyLife && window.ToonValleyPointerGuard && window.ToonValleyDeferredInteractionDispatch && window.ToonValleyUILayerFix, null, { timeout: 30000 });
   const caps = await page.evaluate(() => ({
@@ -111,7 +113,8 @@ try {
     suppressPause: window.ToonValleyPointerGuard.modalPauseSuppression,
     resume: window.ToonValleyPointerGuard.explicitResumeAfterModal,
     keyup: window.ToonValleyDeferredInteractionDispatch.executesOnKeyup,
-    nativeRelease: window.ToonValleyDeferredInteractionDispatch.nativePointerLockRelease,
+    explicitHandoff: window.ToonValleyDeferredInteractionDispatch.explicitPointerLockHandoff,
+    actionAfterUnlock: window.ToonValleyDeferredInteractionDispatch.actionRunsAfterUnlock,
     preserveActions: window.ToonValleyDeferredInteractionDispatch.preservesInteractionActions,
     preservePhysical: window.ToonValleyDeferredInteractionDispatch.preservesPhysicalActionPath,
     gpuSafe: window.ToonValleyUILayerFix.gpuSafePopoverCompositing
@@ -122,7 +125,6 @@ try {
   await page.click('#play-button', { noWaitAfter: true });
   await page.waitForFunction(() => window.ToonValley.state.started === true);
 
-  console.log('modal-popover: furniture');
   await moveTo('furnitureStore', 'Browse furniture catalog');
   await openWithE('furniture');
   await closeModal('furniture');
@@ -134,7 +136,6 @@ try {
   const afterMove = await page.evaluate(() => ({ x: window.ToonValley.player.position.x, z: window.ToonValley.player.position.z }));
   if (Math.hypot(afterMove.x - beforeMove.x, afterMove.z - beforeMove.z) < 0.2) throw new Error(`Gameplay movement did not recover after modal ${JSON.stringify({ beforeMove, afterMove })}`);
 
-  console.log('modal-popover: store');
   await moveTo('generalStore', 'Browse counter');
   await openWithE('store');
   await closeModal('store');
