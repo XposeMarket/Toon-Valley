@@ -43,6 +43,7 @@ jobs:
           node --check community-objectives.js
           node --check community-service-routes.js
           node --check transit-stewardship.js
+          node --check transit-rider-life.js
           node --check living-interiors.js
           node --check navigation-polish.js
           node --check side-quest-overhaul.js
