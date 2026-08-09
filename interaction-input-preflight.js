@@ -59,15 +59,15 @@
       return true;
     }
 
-    queueMicrotask(() => {
+    setTimeout(() => {
       hidePause();
       if (TV.state.modalOpen || modalVisible()) {
         uiOpenCount++;
         window.ToonValleyPointerGuard?.armResumeAfterModal?.();
       } else {
-        setTimeout(relockPhysicalInteraction, 0);
+        relockPhysicalInteraction();
       }
-    });
+    }, 0);
     return true;
   }
 
@@ -83,7 +83,7 @@
       console.warn(lastError);
       return;
     }
-    requestAnimationFrame(flushPending);
+    setTimeout(flushPending, 16);
   }
 
   function beginPreflight(interaction) {
@@ -103,8 +103,7 @@
       return false;
     }
 
-    queueMicrotask(flushPending);
-    requestAnimationFrame(flushPending);
+    setTimeout(flushPending, 0);
     return true;
   }
 
@@ -114,7 +113,7 @@
   }
 
   document.addEventListener('pointerlockchange', () => {
-    if (!gamePointerLocked()) queueMicrotask(flushPending);
+    if (!gamePointerLocked() && pendingInteraction) setTimeout(flushPending, 0);
   }, true);
 
   document.addEventListener('keydown', (event) => {
