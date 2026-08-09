@@ -64,8 +64,9 @@
     }
   }
 
-  function executeAfterPointerUnlock(interaction) {
-    clearTimeout(pendingTimer);
+  function beginPointerUnlock(interaction) {
+    pendingTimer = 0;
+    if (!stillValid(interaction)) { pendingUnlock = null; return; }
     if (document.pointerLockElement !== TV.renderer?.domElement) {
       pendingTimer = setTimeout(() => execute(interaction), 0);
       return;
@@ -89,13 +90,22 @@
 
     pendingUnlock = interaction;
     document.addEventListener('pointerlockchange', onChange);
-    pendingTimer = setTimeout(finish, 500);
+    pendingTimer = setTimeout(finish, 700);
     try {
       document.exitPointerLock?.();
     } catch (error) {
       console.warn('Pointer Lock release before modal interaction failed', error);
       finish();
     }
+  }
+
+  function queueModalInteraction(interaction) {
+    clearTimeout(pendingTimer);
+    pendingUnlock = interaction;
+    // Crucially, do not call exitPointerLock from inside keydown/keyup. Let the
+    // browser finish the complete E input event stack first; then release Pointer
+    // Lock in a fresh task and only construct UI after the unlock transition ends.
+    pendingTimer = setTimeout(() => beginPointerUnlock(interaction), 0);
   }
 
   document.addEventListener('keydown', (event) => {
@@ -118,7 +128,7 @@
     armedInteraction = null;
     event.preventDefault();
     event.stopImmediatePropagation();
-    executeAfterPointerUnlock(interaction);
+    queueModalInteraction(interaction);
   }, true);
 
   // Losing focus can accompany Pointer Lock release. An unfinished keydown can be
@@ -133,6 +143,7 @@
     active: true,
     executesAfterKeyboardEvent: true,
     releasesPointerLockBeforeUI: true,
+    releasesPointerLockAfterKeyEvent: true,
     preservesInteractionActions: true,
     preservesPhysicalActionPath: true,
     queuedActionsSurviveBlur: true,
