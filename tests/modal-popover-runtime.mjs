@@ -100,9 +100,16 @@ try {
   await page.waitForFunction((prompt) => document.getElementById('interaction-prompt')?.textContent.includes(prompt), npcTarget.prompt, { timeout: 6000 });
   checkpoint(`real prompt ready: ${npcTarget.prompt}`);
 
-  // Exercise the real core E interaction path. No pointer-guard listener consumes or
-  // replays this input; the NPC action itself creates the popover synchronously.
-  await page.keyboard.press('KeyE');
+  // Dispatch the same real bubbling E events the core document listener consumes,
+  // but from the page's next task. Chrome DevTools can wedge a keyboard.press call
+  // when Pointer Lock changes before that protocol command returns; scheduling the
+  // DOM events lets a true game freeze surface as the short modal timeout instead.
+  await page.evaluate(() => {
+    setTimeout(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyE', key: 'e', bubbles: true, cancelable: true }));
+      document.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyE', key: 'e', bubbles: true, cancelable: true }));
+    }, 0);
+  });
   await requireReleasedForModal(npcTarget.prompt);
   checkpoint('E interaction opened NPC popover and released Pointer Lock safely');
   await closeResumeAndRequireGameplay(npcTarget.prompt);
