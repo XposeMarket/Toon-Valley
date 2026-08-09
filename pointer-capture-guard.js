@@ -25,6 +25,7 @@
   const pauseScreen = document.getElementById('pause-screen');
   let resumeAfterModal = false;
   let modalUnlocksSuppressed = 0;
+  let syncClock = 0;
 
   const gamePointerLocked = () => Boolean(TV.renderer?.domElement && document.pointerLockElement === TV.renderer.domElement);
   const elementVisible = (element) => {
@@ -40,37 +41,51 @@
     if (TV.DEVICE.touch || !TV.state.started) return;
     resumeAfterModal = true;
     hidePause();
-    queueMicrotask(hidePause);
   }
 
-  // Let the browser perform native Pointer Lock transitions. The core listener may
-  // momentarily reveal Pause on unlock; immediately repair that state whenever a
-  // real modal is active. We deliberately avoid stopImmediatePropagation and avoid
-  // monkey-patching exitPointerLock, both of which previously caused re-entry bugs.
+  // Keep native Pointer Lock semantics. When an interaction intentionally releases
+  // the mouse before opening UI, suppress the core pause overlay without rewriting
+  // Document.exitPointerLock or stopping propagation.
   document.addEventListener('pointerlockchange', () => {
     if (TV.DEVICE.touch || gamePointerLocked()) return;
     if (modalActive() || resumeAfterModal) {
       modalUnlocksSuppressed++;
       armResumeAfterModal();
       hidePause();
-      queueMicrotask(hidePause);
     }
   });
 
   function syncPauseAfterModal() {
     if (!resumeAfterModal || TV.DEVICE.touch || !TV.state.started) return;
-    if (modalActive() || gamePointerLocked()) return;
+    if (modalActive()) {
+      hidePause();
+      return;
+    }
+    if (gamePointerLocked()) {
+      resumeAfterModal = false;
+      hidePause();
+      return;
+    }
     pauseScreen?.classList.remove('hidden');
     resumeAfterModal = false;
   }
 
-  const observer = new MutationObserver(() => queueMicrotask(() => {
-    if (modalActive()) hidePause();
-    else syncPauseAfterModal();
-  }));
-  if (document.body) observer.observe(document.body, { childList: true, subtree: true });
-  document.addEventListener('click', () => queueMicrotask(syncPauseAfterModal));
-  document.addEventListener('keydown', () => queueMicrotask(syncPauseAfterModal));
+  // Avoid a subtree MutationObserver here. A modal insertion can be followed by
+  // substantial UI DOM work; observing the entire body made that insertion part of
+  // the modal lifecycle itself and could starve Chromium/Safari after a popover was
+  // constructed. A cheap bounded frame check plus the user's closing input is enough
+  // to keep Pause hidden while UI is open and expose Resume once it closes.
+  TV.registerUpdateHook((dt) => {
+    if (!resumeAfterModal) return;
+    syncClock += dt;
+    if (syncClock < 0.12) return;
+    syncClock = 0;
+    syncPauseAfterModal();
+  });
+  const syncAfterInput = () => setTimeout(syncPauseAfterModal, 0);
+  document.addEventListener('click', syncAfterInput);
+  document.addEventListener('keydown', syncAfterInput);
+  document.addEventListener('pointerup', syncAfterInput);
 
   window.ToonValleyPointerGuard = Object.freeze({
     active: captureGuarded,
@@ -78,6 +93,7 @@
     nativeModalExit: true,
     modalPauseSuppression: true,
     explicitResumeAfterModal: true,
+    observerFreeModalSync: true,
     modalVisible,
     modalActive,
     armResumeAfterModal,
