@@ -33,7 +33,16 @@ async function diagnostics() {
     area: window.ToonValley?.state?.area,
     modalVisible: window.ToonValleyPointerGuard?.modalVisible?.(),
     resumePending: window.ToonValleyPointerGuard?.resumePending?.(),
-    suppressedUnlocks: window.ToonValleyPointerGuard?.suppressedModalUnlocks?.()
+    suppressedUnlocks: window.ToonValleyPointerGuard?.suppressedModalUnlocks?.(),
+    dispatcher: window.ToonValleyInteractionKeyupDispatch ? {
+      pending: window.ToonValleyInteractionKeyupDispatch.pending(),
+      arms: window.ToonValleyInteractionKeyupDispatch.armCount(),
+      keyups: window.ToonValleyInteractionKeyupDispatch.keyupCount(),
+      dispatches: window.ToonValleyInteractionKeyupDispatch.dispatchCount(),
+      lastPrompt: window.ToonValleyInteractionKeyupDispatch.lastPrompt(),
+      lastError: window.ToonValleyInteractionKeyupDispatch.lastError(),
+      lastDrop: window.ToonValleyInteractionKeyupDispatch.lastDrop()
+    } : null
   }));
 }
 
@@ -42,6 +51,12 @@ async function openNearestWithE(label) {
     page.keyboard.press('KeyE'),
     deadline(3000, `${label}: KeyE dispatch hung`)
   ]);
+  await wait(100);
+  const afterPress = await diagnostics();
+  console.log(`[modal-popover] ${label} post-KeyE`, afterPress);
+  if (!afterPress.dispatcher || afterPress.dispatcher.arms < 1 || afterPress.dispatcher.keyups < 1 || afterPress.dispatcher.dispatches < 1 || afterPress.dispatcher.lastError || afterPress.dispatcher.lastDrop) {
+    throw new Error(`${label}: deferred dispatch regression ${JSON.stringify(afterPress)}`);
+  }
   await page.waitForSelector('.life-overlay', { timeout: 6000 });
   await page.waitForFunction(() => !document.pointerLockElement && window.ToonValley.state.modalOpen === true, null, { timeout: 6000 });
   const state = await diagnostics();
@@ -73,7 +88,7 @@ async function moveToInteraction(area, prompt, returnPoint = { x: 0, z: 10 }) {
 
 try {
   await page.goto(remoteURL || 'http://127.0.0.1:4173', { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => window.ToonValley && window.ToonValleyLife && window.ToonValleyPointerGuard && window.ToonValleyUILayerFix, null, { timeout: 30000 });
+  await page.waitForFunction(() => window.ToonValley && window.ToonValleyLife && window.ToonValleyPointerGuard && window.ToonValleyInteractionKeyupDispatch && window.ToonValleyUILayerFix, null, { timeout: 30000 });
   checkpoint('game globals ready');
 
   await page.click('#play-button');
@@ -85,14 +100,15 @@ try {
     explicitResumeAfterModal: window.ToonValleyPointerGuard.explicitResumeAfterModal,
     modalPauseSuppression: window.ToonValleyPointerGuard.modalPauseSuppression,
     nativePointerLockEvents: window.ToonValleyPointerGuard.nativePointerLockEvents,
-    modalExitDeferred: window.ToonValleyPointerGuard.modalExitDeferred
+    modalExitDeferred: window.ToonValleyPointerGuard.modalExitDeferred,
+    keyupDispatch: window.ToonValleyInteractionKeyupDispatch.executesAfterKeyup
   }));
-  if (!guard.explicitResumeAfterModal || !guard.modalPauseSuppression || !guard.nativePointerLockEvents || !guard.modalExitDeferred) throw new Error(`Pointer guard capabilities missing ${JSON.stringify(guard)}`);
+  if (!guard.explicitResumeAfterModal || !guard.modalPauseSuppression || !guard.nativePointerLockEvents || !guard.modalExitDeferred || !guard.keyupDispatch) throw new Error(`Pointer/input capabilities missing ${JSON.stringify(guard)}`);
 
   const homeTarget = await moveToInteraction('home', 'Open decorating menu');
   await page.waitForFunction((prompt) => window.ToonValley.state.nearestInteractable?.prompt === prompt, homeTarget.prompt, { timeout: 6000 });
   await openNearestWithE(homeTarget.prompt);
-  checkpoint('home decorating popover stable after native E input');
+  checkpoint('home decorating popover stable after E keyup');
   await closeResume(homeTarget.prompt);
 
   const before = await page.evaluate(() => ({ x: window.ToonValley.player.position.x, z: window.ToonValley.player.position.z }));
@@ -104,7 +120,7 @@ try {
   const shopTarget = await moveToInteraction('furnitureStore', 'Browse furniture catalog');
   await page.waitForFunction((prompt) => window.ToonValley.state.nearestInteractable?.prompt === prompt, shopTarget.prompt, { timeout: 6000 });
   await openNearestWithE(shopTarget.prompt);
-  checkpoint('shop catalog popover stable after native E input');
+  checkpoint('shop catalog popover stable after E keyup');
   await closeResume(shopTarget.prompt);
 
   await Promise.race([
@@ -121,7 +137,7 @@ try {
   checkpoint('ToonPhone replacement stable');
 
   if (errors.length) throw new Error(errors.join('\n'));
-  console.log(`Toon Valley modal/popover lifecycle passed with native E interactions and real Pointer Lock: ${remoteURL || 'localhost'}`, { homeTarget, shopTarget, guard });
+  console.log(`Toon Valley modal/popover lifecycle passed with post-keyup interactions and real Pointer Lock: ${remoteURL || 'localhost'}`, { homeTarget, shopTarget, guard });
 } finally {
   await browser.close();
   server?.kill('SIGTERM');
