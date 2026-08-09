@@ -107,7 +107,7 @@ jobs:
       - name: Community trail and errand lifecycle test
         run: timeout 150s node tests/community-life-runtime.mjs
       - name: Modal and popover Pointer Lock lifecycle test
-        run: HEADED=1 xvfb-run -a timeout 150s node tests/modal-popover-runtime.mjs
+        run: timeout 150s node tests/modal-popover-runtime.mjs
       - name: Local browser smoke test
         run: timeout 150s node tests/smoke.mjs
       - name: Production mobile browser check
@@ -159,8 +159,7 @@ jobs:
         if: github.event_name == 'push'
         env:
           BASE_URL: https://toon-valley.vercel.app
-          HEADED: '1'
-        run: xvfb-run -a timeout 150s node tests/modal-popover-runtime.mjs
+        run: timeout 150s node tests/modal-popover-runtime.mjs
       - name: Production world extension verification
         if: github.event_name == 'push'
         env:
