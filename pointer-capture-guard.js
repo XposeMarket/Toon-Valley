@@ -36,10 +36,6 @@
     hidePause();
   }
 
-  // Keep native Pointer Lock semantics. Modal-producing interactions arm this guard
-  // before releasing the mouse. The unlock event may briefly trigger the core Pause
-  // behavior, so repair that one transition without mutating Pointer Lock APIs or
-  // installing any render-loop/DOM-observer work while the popover is open.
   document.addEventListener('pointerlockchange', () => {
     if (TV.DEVICE.touch) return;
     if (gamePointerLocked()) {
@@ -56,9 +52,16 @@
   function syncPauseAfterModal() {
     if (!resumeAfterModal || TV.DEVICE.touch || !TV.state.started) return;
     if (TV.state.modalOpen) {
+      TV.state.pausedByVisibility = true;
       hidePause();
       return;
     }
+
+    // The popover is gone; resume the lightweight game loop so the explicit
+    // resume control and subsequent Pointer Lock transition stay responsive.
+    // Preserve a real background-tab pause when the document itself is hidden.
+    TV.state.pausedByVisibility = Boolean(document.hidden);
+
     if (gamePointerLocked()) {
       resumeAfterModal = false;
       hidePause();
@@ -68,10 +71,6 @@
     resumeAfterModal = false;
   }
 
-  // Closing a modal is always initiated by user input in the existing UI. Run one
-  // bounded post-input check after that event has reached the modal's close handler.
-  // This deliberately avoids querying modal DOM from requestAnimationFrame/update
-  // hooks, which previously made every open popover part of the render hot path.
   const syncAfterInput = () => setTimeout(syncPauseAfterModal, 0);
   document.addEventListener('click', syncAfterInput);
   document.addEventListener('keydown', syncAfterInput);
@@ -85,6 +84,7 @@
     explicitResumeAfterModal: true,
     observerFreeModalSync: true,
     renderLoopFreeModalSync: true,
+    suspendsRenderWorkForModal: true,
     modalVisible,
     modalActive,
     armResumeAfterModal,
