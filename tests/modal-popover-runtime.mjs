@@ -21,21 +21,26 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 760 } });
 page.setDefaultTimeout(10000);
 page.setDefaultNavigationTimeout(45000);
 
+// Use the same deterministic Pointer Lock shim as the established desktop
+// navigation smoke test. Synchronous pointerlockchange delivery mirrors the
+// observable browser state while keeping Chromium's headless DevTools channel
+// responsive; the game dispatcher itself no longer relies on event ordering.
 await page.addInitScript(() => {
-  let lockedElement = null;
-  Object.defineProperty(Document.prototype, 'pointerLockElement', {
-    configurable: true,
-    get() { return lockedElement; }
-  });
-  Element.prototype.requestPointerLock = function requestPointerLock() {
-    lockedElement = this;
-    queueMicrotask(() => document.dispatchEvent(new Event('pointerlockchange')));
-    return Promise.resolve();
-  };
-  Document.prototype.exitPointerLock = function exitPointerLock() {
-    lockedElement = null;
-    queueMicrotask(() => document.dispatchEvent(new Event('pointerlockchange')));
-  };
+  try {
+    Object.defineProperty(Document.prototype, 'pointerLockElement', {
+      configurable: true,
+      get() { return this.__tvTestPointerLock || null; }
+    });
+    Element.prototype.requestPointerLock = function requestPointerLock() {
+      document.__tvTestPointerLock = this;
+      document.dispatchEvent(new Event('pointerlockchange'));
+      return Promise.resolve();
+    };
+    Document.prototype.exitPointerLock = function exitPointerLock() {
+      this.__tvTestPointerLock = null;
+      this.dispatchEvent(new Event('pointerlockchange'));
+    };
+  } catch {}
 });
 
 const errors = [];
@@ -153,7 +158,8 @@ try {
     releasesPointerLockBeforeUI: window.ToonValleyDeferredInteractionDispatch.releasesPointerLockBeforeUI,
     preservesInteractionActions: window.ToonValleyDeferredInteractionDispatch.preservesInteractionActions,
     preservesPhysicalActionPath: window.ToonValleyDeferredInteractionDispatch.preservesPhysicalActionPath,
-    recursionGuard: window.ToonValleyDeferredInteractionDispatch.recursionGuard
+    recursionGuard: window.ToonValleyDeferredInteractionDispatch.recursionGuard,
+    observableUnlockPolling: window.ToonValleyDeferredInteractionDispatch.observableUnlockPolling
   }));
   if (!Object.values(capabilities).every(Boolean)) throw new Error(`Missing modal/input capabilities ${JSON.stringify(capabilities)}`);
 
