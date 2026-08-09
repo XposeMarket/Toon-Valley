@@ -97,9 +97,10 @@ try {
   const guard = await page.evaluate(() => ({
     explicitResumeAfterModal: window.ToonValleyPointerGuard.explicitResumeAfterModal,
     modalExitDeferred: window.ToonValleyPointerGuard.modalExitDeferred,
-    modalPauseSuppression: window.ToonValleyPointerGuard.modalPauseSuppression
+    modalPauseSuppression: window.ToonValleyPointerGuard.modalPauseSuppression,
+    modalInteractionPreflight: window.ToonValleyPointerGuard.modalInteractionPreflight
   }));
-  if (!guard.explicitResumeAfterModal || !guard.modalExitDeferred || !guard.modalPauseSuppression) throw new Error(`Pointer guard capabilities missing ${JSON.stringify(guard)}`);
+  if (!guard.explicitResumeAfterModal || !guard.modalExitDeferred || !guard.modalPauseSuppression || !guard.modalInteractionPreflight) throw new Error(`Pointer guard capabilities missing ${JSON.stringify(guard)}`);
 
   const npcTarget = await page.evaluate(() => {
     const TV = window.ToonValley;
@@ -116,8 +117,21 @@ try {
   await page.waitForFunction((prompt) => document.getElementById('interaction-prompt')?.textContent.includes(prompt), npcTarget.prompt, { timeout: 6000 });
   checkpoint(`real prompt ready: ${npcTarget.prompt} :: ${npcTarget.actionSource}`);
 
-  // Exercise the exact desktop player path instead of directly invoking the action.
   await page.keyboard.press('KeyE');
+  await wait(160);
+  const preflightSnapshot = await page.evaluate(() => ({
+    preflight: window.ToonValleyPointerGuard.preflightState(),
+    active: window.ToonValleyPointerGuard.preflightActive(),
+    nearestPrompt: window.ToonValley.state.nearestInteractable?.prompt || null,
+    modalOpen: window.ToonValley.state.modalOpen,
+    modalVisible: window.ToonValleyPointerGuard.modalVisible(),
+    pointerLocked: Boolean(document.pointerLockElement),
+    pauseHidden: document.getElementById('pause-screen').classList.contains('hidden')
+  }));
+  checkpoint(`post-KeyE state: ${JSON.stringify(preflightSnapshot)}`);
+  if (preflightSnapshot.preflight?.phase === 'action-error' || preflightSnapshot.preflight?.phase === 'release-error') {
+    throw new Error(`Popover preflight failed: ${JSON.stringify(preflightSnapshot)}`);
+  }
   await requireReleasedForModal(npcTarget.prompt);
   checkpoint('real E interaction opened NPC popover and released Pointer Lock safely');
   await closeResumeAndRequireGameplay(npcTarget.prompt);
