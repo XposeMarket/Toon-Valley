@@ -23,8 +23,7 @@
 
   const documentProto = globalThis.Document?.prototype;
   const nativeExitPointerLock = documentProto?.exitPointerLock;
-  let modalExitDeferred = Boolean(nativeExitPointerLock?.__toonValleyDeferredModalExit);
-  let modalExitTimer = 0;
+  let modalExitSynchronous = Boolean(nativeExitPointerLock?.__toonValleyModalExitGuard);
 
   const modalSelector = '.life-overlay,.mb-overlay,.ohx,#build-controls,#ohbuild,#bl-controls';
   const pauseScreen = document.getElementById('pause-screen');
@@ -34,40 +33,40 @@
   const modalUIVisible = () => Boolean(document.querySelector(modalSelector));
   const hidePause = () => pauseScreen?.classList.add('hidden');
 
-  function scheduleModalPointerRelease(doc = document) {
+  function releaseModalPointerLock(doc = document) {
     if (TV.DEVICE.touch || !TV.state.started) return;
     if (!(TV.state.modalOpen || modalUIVisible()) || !doc.pointerLockElement) return;
-    clearTimeout(modalExitTimer);
-    modalExitTimer = setTimeout(() => {
-      modalExitTimer = 0;
-      if (!(TV.state.modalOpen || modalUIVisible()) || !doc.pointerLockElement) return;
-      try {
-        nativeExitPointerLock?.call(doc);
-      } catch (error) {
-        console.warn('Deferred modal Pointer Lock release failed', error);
-      }
-    }, 0);
+    try {
+      nativeExitPointerLock?.call(doc);
+    } catch (error) {
+      console.warn('Modal Pointer Lock release failed', error);
+    }
   }
 
-  if (documentProto && typeof nativeExitPointerLock === 'function' && !modalExitDeferred) {
+  // Life/shop/build UI sets modalOpen only after its DOM is fully constructed. At
+  // that point it is safe to release Pointer Lock synchronously. A capture-phase
+  // pointerlockchange listener below prevents the core pause handler from treating
+  // this intentional unlock as an ordinary pause.
+  if (documentProto && typeof nativeExitPointerLock === 'function' && !modalExitSynchronous) {
     function guardedExitPointerLock() {
-      // UI-producing interactions may ask to release Pointer Lock while their modal
-      // DOM is still being created. Defer that release until the interaction stack
-      // has unwound so pointerlockchange cannot re-enter the pause/UI path mid-build.
       if (window.ToonValley?.state?.modalOpen) {
-        scheduleModalPointerRelease(this);
-        return undefined;
+        try {
+          return nativeExitPointerLock.call(this);
+        } catch (error) {
+          console.warn('Modal Pointer Lock release failed', error);
+          return undefined;
+        }
       }
       return nativeExitPointerLock.call(this);
     }
-    guardedExitPointerLock.__toonValleyDeferredModalExit = true;
+    guardedExitPointerLock.__toonValleyModalExitGuard = true;
     documentProto.exitPointerLock = guardedExitPointerLock;
-    modalExitDeferred = true;
+    modalExitSynchronous = true;
   }
 
   // The core pointerlockchange listener treats every unlock as a pause. Modal unlocks
-  // are intentional, so intercept those unlock events before the core listener can
-  // place the pause screen over the popover.
+  // are intentional, so intercept those events before the core non-capture listener
+  // can place the pause screen over the popover.
   document.addEventListener('pointerlockchange', (event) => {
     if (TV.DEVICE.touch) return;
     if (gamePointerLocked()) return;
@@ -85,32 +84,27 @@
     resumeAfterModal = false;
   }
 
-  // This observer is also the safety net for browser/platform-specific Pointer Lock
-  // timing. If a modal exists but the canvas somehow stayed locked, release it on a
-  // later task independently of the modal implementation's own exitPointerLock call.
+  // Fallback for browsers with unusual Pointer Lock timing: once a modal mutation is
+  // observable, independently ensure the canvas is unlocked. This no longer drives
+  // the normal path and therefore cannot strand an interaction behind a timer.
   const observer = new MutationObserver(() => {
-    if (TV.state.modalOpen || modalUIVisible()) scheduleModalPointerRelease(document);
+    if (TV.state.modalOpen || modalUIVisible()) releaseModalPointerLock(document);
     queueMicrotask(revealResumeAfterModal);
   });
   if (document.body) observer.observe(document.body, { childList: true, subtree: true });
-  document.addEventListener('click', () => {
-    if (TV.state.modalOpen || modalUIVisible()) scheduleModalPointerRelease(document);
-    queueMicrotask(revealResumeAfterModal);
-  });
-  document.addEventListener('keydown', () => {
-    if (TV.state.modalOpen || modalUIVisible()) scheduleModalPointerRelease(document);
-    queueMicrotask(revealResumeAfterModal);
-  });
+
+  document.addEventListener('click', () => queueMicrotask(revealResumeAfterModal));
+  document.addEventListener('keydown', () => queueMicrotask(revealResumeAfterModal));
 
   window.ToonValleyPointerGuard = Object.freeze({
     active: captureGuarded,
     pointerCapture: captureGuarded,
-    modalExitDeferred,
+    modalExitSynchronous,
     modalPauseSuppression: true,
     explicitResumeAfterModal: true,
     modalVisible: modalUIVisible,
     resumePending: () => resumeAfterModal,
-    forceModalRelease: () => scheduleModalPointerRelease(document)
+    forceModalRelease: () => releaseModalPointerLock(document)
   });
 
   console.info('Toon Valley pointer/input guard ready', window.ToonValleyPointerGuard);
