@@ -57,7 +57,10 @@
   }
 
   function runAction(interaction, modal) {
-    if (!stillValid(interaction)) return;
+    if (!stillValid(interaction)) {
+      if (modal) window.ToonValleyUILayerFix?.endPopoverTransition?.();
+      return;
+    }
     dispatches++;
     if (modal) modalDispatches++;
     lastPrompt = interaction.prompt || 'Interact';
@@ -70,6 +73,8 @@
       lastError = String(error?.stack || error?.message || error);
       window.ToonValleyPointerGuard?.syncPauseAfterModal?.();
       console.error('Toon Valley deferred interaction failed', error);
+    } finally {
+      if (modal) window.ToonValleyUILayerFix?.endPopoverTransition?.();
     }
   }
 
@@ -92,17 +97,16 @@
     }
 
     const guard = window.ToonValleyPointerGuard;
+    const ui = window.ToonValleyUILayerFix;
+    ui?.beginPopoverTransition?.();
     const locked = Boolean(guard?.gamePointerLocked?.());
     if (!locked) {
       runAction(interaction, true);
       return;
     }
 
-    // Critical desktop modal handoff: never let an interaction action release
-    // Pointer Lock while it is simultaneously constructing modal DOM. That exact
-    // synchronous transition can stall Chromium/WebGL on some machines. Release
-    // first, let pointerlockchange settle, then execute the authored action.
     if (handoffInteraction) {
+      ui?.endPopoverTransition?.();
       lastDrop = 'modal-handoff-already-pending';
       return;
     }
@@ -118,9 +122,6 @@
       finishModalHandoff('release-error');
       return;
     }
-    // Browser engines occasionally omit pointerlockchange during focus changes.
-    // The bounded fallback avoids dropping the interaction while still keeping the
-    // modal action outside the input task that initiated the unlock.
     handoffTimer = setTimeout(() => finishModalHandoff('timeout'), 180);
   }
 
@@ -165,6 +166,7 @@
     executesOnKeyup: true,
     explicitPointerLockHandoff: true,
     actionRunsAfterUnlock: true,
+    prefreezesWebGLBeforeModal: true,
     sharedModalHandoff: true,
     preservesInteractionActions: true,
     preservesPhysicalActionPath: true,
@@ -173,7 +175,7 @@
     pending: () => Boolean(armedInteraction),
     handoffPending: () => Boolean(handoffInteraction),
     handoffArmed: () => Boolean(window.ToonValleyPointerGuard?.resumePending?.()),
-    renderQuiesced: () => false,
+    renderQuiesced: () => Boolean(window.ToonValleyUILayerFix?.transitionPending?.()),
     canvasDetached: () => false,
     interceptionCount: () => arms,
     scheduleCount: () => arms,
