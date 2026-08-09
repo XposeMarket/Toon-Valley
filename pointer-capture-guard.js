@@ -24,6 +24,7 @@
   const modalSelector = '.life-overlay,.mb-overlay,.ohx,#build-controls,#ohbuild,#bl-controls';
   const pauseScreen = document.getElementById('pause-screen');
   let resumeAfterModal = false;
+  let interactionUnlockPending = false;
   let modalUnlocksSuppressed = 0;
 
   const gamePointerLocked = () => Boolean(TV.renderer?.domElement && document.pointerLockElement === TV.renderer.domElement);
@@ -37,23 +38,44 @@
     queueMicrotask(hidePause);
   }
 
+  function prepareModalInteraction() {
+    if (TV.DEVICE.touch || !TV.state.started) return false;
+    interactionUnlockPending = true;
+    armResumeAfterModal();
+    if (gamePointerLocked()) {
+      try {
+        document.exitPointerLock();
+      } catch (error) {
+        interactionUnlockPending = false;
+        console.error('Unable to release Pointer Lock before modal interaction', error);
+        return false;
+      }
+      return true;
+    }
+    interactionUnlockPending = false;
+    return false;
+  }
+
+  function modalInteractionReady() {
+    return !gamePointerLocked();
+  }
+
   function revealResumeAfterModal() {
     if (!resumeAfterModal || TV.DEVICE.touch || !TV.state.started) return;
-    if (TV.state.modalOpen || modalUIVisible() || gamePointerLocked()) return;
+    if (TV.state.modalOpen || modalUIVisible() || gamePointerLocked() || interactionUnlockPending) return;
     pauseScreen?.classList.remove('hidden');
     resumeAfterModal = false;
   }
 
-  // Pointer Lock change events target document. The core game registered its
-  // document listener before this module loads, so a document-level capture
-  // listener can still lose ordering at the event target. Listen on window's
-  // capture phase instead: window is an ancestor of document in the event path,
-  // so intentional modal unlocks are intercepted before the core pause handler.
+  // Run from window capture so intentional UI unlocks are intercepted before the
+  // core document-level pause handler. Preflight unlocks happen before the modal
+  // exists, so interactionUnlockPending is part of the suppression condition.
   window.addEventListener('pointerlockchange', (event) => {
     if (TV.DEVICE.touch || gamePointerLocked()) return;
-    if (TV.state.modalOpen || modalUIVisible()) {
+    if (interactionUnlockPending || TV.state.modalOpen || modalUIVisible()) {
       event.stopImmediatePropagation();
       armResumeAfterModal();
+      interactionUnlockPending = false;
       modalUnlocksSuppressed++;
     }
   }, true);
@@ -69,9 +91,13 @@
     modalPauseSuppression: true,
     consumesModalPointerLockChange: true,
     explicitResumeAfterModal: true,
+    preflightModalUnlock: true,
     modalVisible: modalUIVisible,
+    prepareModalInteraction,
+    modalInteractionReady,
     armResumeAfterModal,
     resumePending: () => resumeAfterModal,
+    interactionUnlockPending: () => interactionUnlockPending,
     suppressedModalUnlocks: () => modalUnlocksSuppressed
   });
 
