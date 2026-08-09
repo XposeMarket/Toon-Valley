@@ -21,10 +21,6 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 760 } });
 page.setDefaultTimeout(10000);
 page.setDefaultNavigationTimeout(45000);
 
-// The desktop navigation smoke suite covers native keyboard and Pointer Lock. This
-// focused regression supplies Pointer Lock state deterministically because Chromium
-// under CI can stop servicing DevTools commands while native lock is active. We then
-// call the exact interaction action that the single core KeyE handler calls.
 await page.addInitScript(() => {
   let lockedElement = null;
   Object.defineProperty(Document.prototype, 'pointerLockElement', {
@@ -49,28 +45,33 @@ const checkpoint = (label) => console.log(`[modal-popover] ${label}`);
 const modalSelector = '.life-overlay,.ohx,.mb-overlay,#build-controls,#ohbuild,#bl-controls';
 
 async function diagnostics() {
-  return page.evaluate((selector) => ({
-    pointerLocked: Boolean(document.pointerLockElement),
-    gamePointerLocked: document.pointerLockElement === window.ToonValley?.renderer?.domElement,
-    modalOpen: window.ToonValley?.state?.modalOpen,
-    overlay: Boolean(document.querySelector(selector)),
-    pauseHidden: document.getElementById('pause-screen')?.classList.contains('hidden'),
-    nearest: window.ToonValley?.state?.nearestInteractable?.prompt || null,
-    area: window.ToonValley?.state?.area,
-    modalVisible: window.ToonValleyPointerGuard?.modalVisible?.(),
-    resumePending: window.ToonValleyPointerGuard?.resumePending?.(),
-    suppressedUnlocks: window.ToonValleyPointerGuard?.suppressedModalUnlocks?.(),
-    dispatcher: window.ToonValleyDeferredInteractionDispatch ? {
-      pending: window.ToonValleyDeferredInteractionDispatch.pending(),
-      wrapped: window.ToonValleyDeferredInteractionDispatch.wrappedCount(),
-      schedules: window.ToonValleyDeferredInteractionDispatch.scheduleCount(),
-      attempts: window.ToonValleyDeferredInteractionDispatch.attemptCount(),
-      dispatches: window.ToonValleyDeferredInteractionDispatch.dispatchCount(),
-      lastPrompt: window.ToonValleyDeferredInteractionDispatch.lastPrompt(),
-      lastError: window.ToonValleyDeferredInteractionDispatch.lastError(),
-      lastDrop: window.ToonValleyDeferredInteractionDispatch.lastDrop()
-    } : null
-  }), modalSelector);
+  return page.evaluate((selector) => {
+    const nearest = window.ToonValley?.state?.nearestInteractable;
+    return {
+      pointerLocked: Boolean(document.pointerLockElement),
+      gamePointerLocked: document.pointerLockElement === window.ToonValley?.renderer?.domElement,
+      modalOpen: window.ToonValley?.state?.modalOpen,
+      overlay: Boolean(document.querySelector(selector)),
+      pauseHidden: document.getElementById('pause-screen')?.classList.contains('hidden'),
+      nearest: nearest?.prompt || null,
+      nearestWrapped: Boolean(nearest?.action?.__toonValleyModalSafeWrapper),
+      nearestHasOriginal: Boolean(nearest?.action?.__toonValleyOriginalAction),
+      area: window.ToonValley?.state?.area,
+      modalVisible: window.ToonValleyPointerGuard?.modalVisible?.(),
+      resumePending: window.ToonValleyPointerGuard?.resumePending?.(),
+      suppressedUnlocks: window.ToonValleyPointerGuard?.suppressedModalUnlocks?.(),
+      dispatcher: window.ToonValleyDeferredInteractionDispatch ? {
+        pending: window.ToonValleyDeferredInteractionDispatch.pending(),
+        wrapped: window.ToonValleyDeferredInteractionDispatch.wrappedCount(),
+        schedules: window.ToonValleyDeferredInteractionDispatch.scheduleCount(),
+        attempts: window.ToonValleyDeferredInteractionDispatch.attemptCount(),
+        dispatches: window.ToonValleyDeferredInteractionDispatch.dispatchCount(),
+        lastPrompt: window.ToonValleyDeferredInteractionDispatch.lastPrompt(),
+        lastError: window.ToonValleyDeferredInteractionDispatch.lastError(),
+        lastDrop: window.ToonValleyDeferredInteractionDispatch.lastDrop()
+      } : null
+    };
+  }, modalSelector);
 }
 
 async function requireGamePointerLock(label) {
@@ -83,13 +84,17 @@ async function moveToInteraction(area, prompt) {
   await page.evaluate(({ area, prompt }) => {
     const TV = window.ToonValley;
     TV.enterInterior(area, { x: 0, z: 10 });
-    window.ToonValleyDeferredInteractionDispatch.scan();
     const interaction = TV.interactables.find((item) => item.area === area && item.prompt === prompt && typeof item.action === 'function');
     if (!interaction) throw new Error(`${prompt} interaction not found in ${area}`);
     TV.player.position.set(interaction.x, 0, interaction.z);
     TV.playerVelocity.set(0, 0, 0);
+    window.ToonValleyDeferredInteractionDispatch.scan();
   }, { area, prompt });
   await page.waitForFunction((prompt) => window.ToonValley.state.nearestInteractable?.prompt === prompt, prompt, { timeout: 6000 });
+  await page.evaluate(() => window.ToonValleyDeferredInteractionDispatch.scan());
+  const state = await diagnostics();
+  console.log(`[modal-popover] ${prompt} preflight`, state);
+  if (!state.nearestWrapped) throw new Error(`${prompt}: nearest interaction was not modal-safe wrapped ${JSON.stringify(state)}`);
 }
 
 async function openCurrentInteraction(label) {
@@ -106,7 +111,12 @@ async function openCurrentInteraction(label) {
   });
   if (actionDuration > 50) throw new Error(`${label}: wrapped interaction blocked synchronously for ${actionDuration}ms`);
 
-  await page.waitForFunction((previous) => window.ToonValleyDeferredInteractionDispatch.scheduleCount() > previous, before.schedules, { timeout: 4000 });
+  const immediate = await diagnostics();
+  console.log(`[modal-popover] ${label} immediate`, immediate);
+  if (immediate.dispatcher?.schedules <= before.schedules) {
+    throw new Error(`${label}: modal wrapper did not schedule deferred dispatch ${JSON.stringify(immediate)}`);
+  }
+
   await page.waitForFunction((previous) => window.ToonValleyDeferredInteractionDispatch.dispatchCount() > previous, before.dispatches, { timeout: 4000 });
   await page.waitForFunction((selector) => Boolean(document.querySelector(selector)) && window.ToonValley.state.modalOpen === true, modalSelector, { timeout: 4000 });
   await page.waitForFunction(() => !document.pointerLockElement, null, { timeout: 4000 });
@@ -142,7 +152,8 @@ try {
     executesAfterKeyboardEvent: window.ToonValleyDeferredInteractionDispatch.executesAfterKeyboardEvent,
     releasesPointerLockBeforeUI: window.ToonValleyDeferredInteractionDispatch.releasesPointerLockBeforeUI,
     preservesInteractionActions: window.ToonValleyDeferredInteractionDispatch.preservesInteractionActions,
-    preservesPhysicalActionPath: window.ToonValleyDeferredInteractionDispatch.preservesPhysicalActionPath
+    preservesPhysicalActionPath: window.ToonValleyDeferredInteractionDispatch.preservesPhysicalActionPath,
+    recursionGuard: window.ToonValleyDeferredInteractionDispatch.recursionGuard
   }));
   if (!Object.values(capabilities).every(Boolean)) throw new Error(`Missing modal/input capabilities ${JSON.stringify(capabilities)}`);
 
