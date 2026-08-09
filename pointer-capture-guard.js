@@ -21,50 +21,68 @@
     captureGuarded = true;
   }
 
-  const pauseScreen = document.getElementById('pause-screen');
   const modalSelector = '.life-overlay,.mb-overlay,.ohx,#build-controls,#ohbuild,#bl-controls';
-  let suppressedUnlocks = 0;
+  const pauseScreen = document.getElementById('pause-screen');
+  let resumeAfterModal = false;
+  let modalUnlocksSuppressed = 0;
 
-  const gamePointerLocked = () => document.pointerLockElement === TV.renderer?.domElement;
-  const modalVisible = () => Boolean(document.querySelector(modalSelector));
+  const gamePointerLocked = () => Boolean(TV.renderer?.domElement && document.pointerLockElement === TV.renderer.domElement);
+  const elementVisible = (element) => {
+    if (!element || element.classList?.contains('hidden')) return false;
+    const style = getComputedStyle(element);
+    return style.display !== 'none' && style.visibility !== 'hidden';
+  };
+  const modalVisible = () => Array.from(document.querySelectorAll(modalSelector)).some(elementVisible);
   const modalActive = () => Boolean(TV.state.modalOpen || modalVisible());
+  const hidePause = () => pauseScreen?.classList.add('hidden');
 
-  function hidePauseForModal() {
-    if (TV.DEVICE.touch || !modalActive()) return;
-    pauseScreen?.classList.add('hidden');
+  function armResumeAfterModal() {
+    if (TV.DEVICE.touch || !TV.state.started) return;
+    resumeAfterModal = true;
+    hidePause();
+    queueMicrotask(hidePause);
   }
+
+  // Let the browser perform native Pointer Lock transitions. The core listener may
+  // momentarily reveal Pause on unlock; immediately repair that state whenever a
+  // real modal is active. We deliberately avoid stopImmediatePropagation and avoid
+  // monkey-patching exitPointerLock, both of which previously caused re-entry bugs.
+  document.addEventListener('pointerlockchange', () => {
+    if (TV.DEVICE.touch || gamePointerLocked()) return;
+    if (modalActive() || resumeAfterModal) {
+      modalUnlocksSuppressed++;
+      armResumeAfterModal();
+      hidePause();
+      queueMicrotask(hidePause);
+    }
+  });
 
   function syncPauseAfterModal() {
-    if (TV.DEVICE.touch || !TV.state.started || modalActive() || gamePointerLocked()) return;
+    if (!resumeAfterModal || TV.DEVICE.touch || !TV.state.started) return;
+    if (modalActive() || gamePointerLocked()) return;
     pauseScreen?.classList.remove('hidden');
+    resumeAfterModal = false;
   }
 
-  // Modal/popover interactions intentionally release Pointer Lock so the mouse can
-  // operate the UI. Consume only that unlock before the core bubble listener turns
-  // it into a pause overlay. Ordinary Esc/unlock behavior continues unchanged.
-  document.addEventListener('pointerlockchange', (event) => {
-    if (TV.DEVICE.touch || gamePointerLocked() || !modalActive()) return;
-    hidePauseForModal();
-    suppressedUnlocks++;
-    event.stopImmediatePropagation();
-  }, true);
-
-  // Closing the final modal leaves Pointer Lock released by design. Surface the
-  // normal Resume affordance once the UI is gone instead of silently freezing input.
   const observer = new MutationObserver(() => queueMicrotask(() => {
-    hidePauseForModal();
-    syncPauseAfterModal();
+    if (modalActive()) hidePause();
+    else syncPauseAfterModal();
   }));
   if (document.body) observer.observe(document.body, { childList: true, subtree: true });
+  document.addEventListener('click', () => queueMicrotask(syncPauseAfterModal));
+  document.addEventListener('keydown', () => queueMicrotask(syncPauseAfterModal));
 
   window.ToonValleyPointerGuard = Object.freeze({
     active: captureGuarded,
     pointerCapture: captureGuarded,
+    nativeModalExit: true,
     modalPauseSuppression: true,
     explicitResumeAfterModal: true,
     modalVisible,
     modalActive,
-    suppressedModalUnlocks: () => suppressedUnlocks,
+    armResumeAfterModal,
+    resumePending: () => resumeAfterModal,
+    suppressedModalUnlocks: () => modalUnlocksSuppressed,
     syncPauseAfterModal
   });
 
