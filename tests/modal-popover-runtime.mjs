@@ -12,10 +12,10 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 760 } });
 page.setDefaultTimeout(10000);
 page.setDefaultNavigationTimeout(45000);
 
-// Native Pointer Lock is already covered by the desktop browser smoke suite. Xvfb
-// can deadlock Chromium's DevTools connection while real Pointer Lock is held, so
-// this focused regression supplies the browser state transition deterministically
-// and then drives the actual keyboard input path with Playwright keyboard events.
+// Native Pointer Lock is covered by the desktop browser smoke suite. Xvfb can
+// deadlock Chromium's DevTools connection while real Pointer Lock is held, so this
+// focused regression supplies the state transition deterministically while driving
+// the game's real core KeyE handler with native Playwright keyboard input.
 await page.addInitScript(() => {
   let lockedElement = null;
   Object.defineProperty(Document.prototype, 'pointerLockElement', {
@@ -53,11 +53,10 @@ async function diagnostics() {
     suppressedUnlocks: window.ToonValleyPointerGuard?.suppressedModalUnlocks?.(),
     dispatcher: window.ToonValleyDeferredInteractionDispatch ? {
       pending: window.ToonValleyDeferredInteractionDispatch.pending(),
-      arms: window.ToonValleyDeferredInteractionDispatch.armCount(),
-      keyups: window.ToonValleyDeferredInteractionDispatch.keyupCount(),
+      wrapped: window.ToonValleyDeferredInteractionDispatch.wrappedCount(),
+      schedules: window.ToonValleyDeferredInteractionDispatch.scheduleCount(),
       attempts: window.ToonValleyDeferredInteractionDispatch.attemptCount(),
       dispatches: window.ToonValleyDeferredInteractionDispatch.dispatchCount(),
-      blurs: window.ToonValleyDeferredInteractionDispatch.blurCount(),
       lastPrompt: window.ToonValleyDeferredInteractionDispatch.lastPrompt(),
       lastError: window.ToonValleyDeferredInteractionDispatch.lastError(),
       lastDrop: window.ToonValleyDeferredInteractionDispatch.lastDrop()
@@ -75,6 +74,7 @@ async function moveToInteraction(area, prompt) {
   await page.evaluate(({ area, prompt }) => {
     const TV = window.ToonValley;
     TV.enterInterior(area, { x: 0, z: 10 });
+    window.ToonValleyDeferredInteractionDispatch.scan();
     const interaction = TV.interactables.find((item) => item.area === area && item.prompt === prompt && typeof item.action === 'function');
     if (!interaction) throw new Error(`${prompt} interaction not found in ${area}`);
     TV.player.position.set(interaction.x, 0, interaction.z);
@@ -84,19 +84,23 @@ async function moveToInteraction(area, prompt) {
 }
 
 async function openNearestWithE(label) {
-  const before = await page.evaluate(() => window.ToonValleyDeferredInteractionDispatch.dispatchCount());
+  const before = await page.evaluate(() => ({
+    schedules: window.ToonValleyDeferredInteractionDispatch.scheduleCount(),
+    dispatches: window.ToonValleyDeferredInteractionDispatch.dispatchCount()
+  }));
   const started = Date.now();
   await page.keyboard.press('e');
   const eventDuration = Date.now() - started;
-  if (eventDuration > 1500) throw new Error(`${label}: E event stack blocked for ${eventDuration}ms`);
+  if (eventDuration > 1500) throw new Error(`${label}: core E event stack blocked for ${eventDuration}ms`);
 
-  await page.waitForFunction((previous) => window.ToonValleyDeferredInteractionDispatch.dispatchCount() > previous, before, { timeout: 4000 });
+  await page.waitForFunction((previous) => window.ToonValleyDeferredInteractionDispatch.scheduleCount() > previous, before.schedules, { timeout: 4000 });
+  await page.waitForFunction((previous) => window.ToonValleyDeferredInteractionDispatch.dispatchCount() > previous, before.dispatches, { timeout: 4000 });
   await page.waitForFunction((selector) => Boolean(document.querySelector(selector)) && window.ToonValley.state.modalOpen === true, modalSelector, { timeout: 4000 });
   await page.waitForFunction(() => !document.pointerLockElement, null, { timeout: 4000 });
   const state = await diagnostics();
   console.log(`[modal-popover] ${label} opened`, state);
-  if (!state.dispatcher || state.dispatcher.arms < 1 || state.dispatcher.keyups < 1 || state.dispatcher.attempts < 1 || state.dispatcher.dispatches <= before || state.dispatcher.lastError || state.dispatcher.lastDrop) {
-    throw new Error(`${label}: deferred E dispatch regression ${JSON.stringify(state)}`);
+  if (!state.dispatcher || state.dispatcher.wrapped < 2 || state.dispatcher.schedules <= before.schedules || state.dispatcher.attempts < 1 || state.dispatcher.dispatches <= before.dispatches || state.dispatcher.lastError || state.dispatcher.lastDrop) {
+    throw new Error(`${label}: modal-safe action regression ${JSON.stringify(state)}`);
   }
   if (!state.modalOpen || !state.overlay || !state.pauseHidden || state.pointerLocked || !state.modalVisible || !state.resumePending || state.suppressedUnlocks < 1) {
     throw new Error(`${label}: modal Pointer Lock regression ${JSON.stringify(state)}`);
@@ -104,8 +108,7 @@ async function openNearestWithE(label) {
 }
 
 async function closeCurrentModal(label) {
-  const closeSelector = '.life-close,[data-close]';
-  await page.locator(closeSelector).first().click();
+  await page.locator('.life-close,[data-close]').first().click();
   await page.waitForFunction((selector) => !document.querySelector(selector) && window.ToonValley.state.modalOpen === false, modalSelector, { timeout: 6000 });
   await page.waitForFunction(() => !document.getElementById('pause-screen').classList.contains('hidden'), null, { timeout: 6000 });
   await page.click('#resume-button');
@@ -122,12 +125,13 @@ try {
     nativeModalExit: window.ToonValleyPointerGuard.nativeModalExit,
     modalPauseSuppression: window.ToonValleyPointerGuard.modalPauseSuppression,
     explicitResumeAfterModal: window.ToonValleyPointerGuard.explicitResumeAfterModal,
+    singleCoreKeyHandler: window.ToonValleyDeferredInteractionDispatch.singleCoreKeyHandler,
+    actionWrapperArchitecture: window.ToonValleyDeferredInteractionDispatch.actionWrapperArchitecture,
     executesAfterKeyboardEvent: window.ToonValleyDeferredInteractionDispatch.executesAfterKeyboardEvent,
     releasesPointerLockBeforeUI: window.ToonValleyDeferredInteractionDispatch.releasesPointerLockBeforeUI,
     releasesPointerLockAfterKeyEvent: window.ToonValleyDeferredInteractionDispatch.releasesPointerLockAfterKeyEvent,
     preservesInteractionActions: window.ToonValleyDeferredInteractionDispatch.preservesInteractionActions,
-    preservesPhysicalActionPath: window.ToonValleyDeferredInteractionDispatch.preservesPhysicalActionPath,
-    queuedActionsSurviveBlur: window.ToonValleyDeferredInteractionDispatch.queuedActionsSurviveBlur
+    preservesPhysicalActionPath: window.ToonValleyDeferredInteractionDispatch.preservesPhysicalActionPath
   }));
   if (!Object.values(capabilities).every(Boolean)) throw new Error(`Missing modal/input capabilities ${JSON.stringify(capabilities)}`);
 
