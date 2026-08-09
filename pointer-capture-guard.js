@@ -23,45 +23,46 @@
 
   const documentProto = globalThis.Document?.prototype;
   const nativeExitPointerLock = documentProto?.exitPointerLock;
-  let modalExitSynchronous = Boolean(nativeExitPointerLock?.__toonValleyModalExitGuard);
+  let modalExitDeferred = Boolean(nativeExitPointerLock?.__toonValleyModalExitGuard);
 
   const modalSelector = '.life-overlay,.mb-overlay,.ohx,#build-controls,#ohbuild,#bl-controls';
   const pauseScreen = document.getElementById('pause-screen');
   let resumeAfterModal = false;
+  let releaseQueued = false;
 
   const gamePointerLocked = () => Boolean(TV.renderer?.domElement && document.pointerLockElement === TV.renderer.domElement);
   const modalUIVisible = () => Boolean(document.querySelector(modalSelector));
   const hidePause = () => pauseScreen?.classList.add('hidden');
 
   function releaseModalPointerLock(doc = document) {
-    if (TV.DEVICE.touch || !TV.state.started) return;
+    if (releaseQueued || TV.DEVICE.touch || !TV.state.started) return;
     if (!(TV.state.modalOpen || modalUIVisible()) || !doc.pointerLockElement) return;
-    try {
-      nativeExitPointerLock?.call(doc);
-    } catch (error) {
-      console.warn('Modal Pointer Lock release failed', error);
-    }
+    releaseQueued = true;
+    setTimeout(() => {
+      releaseQueued = false;
+      if (!(TV.state.modalOpen || modalUIVisible()) || !doc.pointerLockElement) return;
+      try {
+        nativeExitPointerLock?.call(doc);
+      } catch (error) {
+        console.warn('Modal Pointer Lock release failed', error);
+      }
+    }, 0);
   }
 
-  // Life/shop/build UI sets modalOpen only after its DOM is fully constructed. At
-  // that point it is safe to release Pointer Lock synchronously. A capture-phase
-  // pointerlockchange listener below prevents the core pause handler from treating
-  // this intentional unlock as an ordinary pause.
-  if (documentProto && typeof nativeExitPointerLock === 'function' && !modalExitSynchronous) {
+  // Exiting Pointer Lock synchronously from the same keyboard event that opens a
+  // dialog can wedge Chromium/WebKit. Modal exits are therefore moved onto the next
+  // task. Ordinary Esc/pause exits stay native and synchronous.
+  if (documentProto && typeof nativeExitPointerLock === 'function' && !modalExitDeferred) {
     function guardedExitPointerLock() {
       if (window.ToonValley?.state?.modalOpen) {
-        try {
-          return nativeExitPointerLock.call(this);
-        } catch (error) {
-          console.warn('Modal Pointer Lock release failed', error);
-          return undefined;
-        }
+        releaseModalPointerLock(this);
+        return undefined;
       }
       return nativeExitPointerLock.call(this);
     }
     guardedExitPointerLock.__toonValleyModalExitGuard = true;
     documentProto.exitPointerLock = guardedExitPointerLock;
-    modalExitSynchronous = true;
+    modalExitDeferred = true;
   }
 
   // The core pointerlockchange listener treats every unlock as a pause. Modal unlocks
@@ -85,8 +86,8 @@
   }
 
   // Fallback for browsers with unusual Pointer Lock timing: once a modal mutation is
-  // observable, independently ensure the canvas is unlocked. This no longer drives
-  // the normal path and therefore cannot strand an interaction behind a timer.
+  // observable, independently ensure the canvas is unlocked. The release remains
+  // deferred so mutation delivery can never re-enter the keydown interaction stack.
   const observer = new MutationObserver(() => {
     if (TV.state.modalOpen || modalUIVisible()) releaseModalPointerLock(document);
     queueMicrotask(revealResumeAfterModal);
@@ -99,7 +100,7 @@
   window.ToonValleyPointerGuard = Object.freeze({
     active: captureGuarded,
     pointerCapture: captureGuarded,
-    modalExitSynchronous,
+    modalExitDeferred,
     modalPauseSuppression: true,
     explicitResumeAfterModal: true,
     modalVisible: modalUIVisible,
