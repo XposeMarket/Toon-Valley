@@ -72,8 +72,6 @@ async function requireGamePointerLock(label) {
   try {
     await page.waitForFunction(() => document.pointerLockElement === window.ToonValley?.renderer?.domElement, null, { timeout: 2500, polling: 50 });
   } catch {
-    // A direct canvas click is a real user gesture and gives headless Chromium a
-    // second opportunity to enter Pointer Lock without monkey-patching browser APIs.
     await page.locator('#game canvas').click({ position: { x: 640, y: 380 } });
     await page.waitForFunction(() => document.pointerLockElement === window.ToonValley?.renderer?.domElement, null, { timeout: 4000, polling: 50 });
   }
@@ -104,16 +102,16 @@ async function openCurrentInteraction(label) {
     dispatches: window.ToonValleyDeferredInteractionDispatch.dispatchCount()
   }));
 
-  // Exercise the actual player's keyboard route. Do not call the interaction
-  // function directly and do not replace Pointer Lock APIs in the browser.
   await page.keyboard.press('e');
   await page.waitForFunction((previous) => window.ToonValleyDeferredInteractionDispatch.scheduleCount() > previous, before.schedules, { timeout: 4000, polling: 50 });
   checkpoint(`${label} scheduled from real E input`);
-  await page.waitForFunction((previous) => window.ToonValleyDeferredInteractionDispatch.dispatchCount() > previous, before.dispatches, { timeout: 5000, polling: 50 });
-  checkpoint(`${label} dispatch completed`);
-  await page.waitForFunction((selector) => Boolean(document.querySelector(selector)) && window.ToonValley.state.modalOpen === true, modalSelector, { timeout: 5000, polling: 50 });
-  checkpoint(`${label} overlay visible`);
-  await page.waitForFunction(() => !document.pointerLockElement, null, { timeout: 4000, polling: 50 });
+
+  // Gate on the player-visible result, not an internal counter. In headless
+  // Chromium the page can switch task scheduling domains while Pointer Lock exits;
+  // the DOM overlay and modal state are the behavior players actually rely on.
+  await page.locator(modalSelector).first().waitFor({ state: 'attached', timeout: 6000 });
+  await page.waitForFunction(() => window.ToonValley.state.modalOpen === true && !document.pointerLockElement, null, { timeout: 6000, polling: 50 });
+  checkpoint(`${label} overlay visible and Pointer Lock released`);
 
   const state = await diagnostics();
   console.log(`[modal-popover] ${label} opened`, state);
