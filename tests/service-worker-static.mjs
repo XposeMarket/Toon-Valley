@@ -29,7 +29,7 @@ const requiredGuard = [
   'explicitResumeAfterModal: true',
   'modalPauseSuppression: true',
   'consumesModalPointerLockChange: true',
-  "document.addEventListener('pointerlockchange'",
+  "window.addEventListener('pointerlockchange'",
   'event.stopImmediatePropagation()',
   'armResumeAfterModal();',
   'queueMicrotask(hidePause)',
@@ -39,6 +39,7 @@ const requiredGuard = [
   'suppressedModalUnlocks: () => modalUnlocksSuppressed'
 ];
 for (const snippet of requiredGuard) if (!guard.includes(snippet)) throw new Error(`Popover input invariant missing: ${snippet}`);
+if (guard.includes("document.addEventListener('pointerlockchange'")) throw new Error('Modal Pointer Lock suppression must run from window capture before the core document listener');
 if (guard.includes('Document?.prototype') || guard.includes('exitPointerLock =')) throw new Error('Pointer guard must not monkey-patch Pointer Lock release');
 
 const requiredDispatcher = [
@@ -61,4 +62,4 @@ if (modalStateIndex < 0 || modalExitIndex < modalStateIndex) throw new Error('Li
 if (!game.includes("if (event.code === 'KeyE' && !event.repeat) interact();")) throw new Error('Core desktop E route must remain present behind the capture dispatcher');
 if (!game.includes('if (nearest.action) nearest.action();')) throw new Error('Core interact() action execution must remain unchanged');
 
-console.log('Toon Valley service-worker v36, post-keyup interactions, and modal pause suppression invariants passed.');
+console.log('Toon Valley service-worker v36, post-keyup interactions, window-capture modal pause suppression, and stale-client recovery invariants passed.');
