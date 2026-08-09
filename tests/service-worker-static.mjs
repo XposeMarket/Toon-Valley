@@ -24,8 +24,15 @@ if (guardIndex < 0 || navigateIndex < guardIndex) throw new Error('Stale-client 
 const requiredGuard = [
   'explicitResumeAfterModal: true',
   'modalPauseSuppression: true',
+  'modalInteractionPreflight: true',
   'modalExitDeferred',
   '__toonValleyModalExitGuard',
+  'preflightUIInteraction',
+  'interactionOpensModal',
+  "event.code !== 'KeyE'",
+  'interactionPreflight = true',
+  'nativeExitPointerLock?.call(document)',
+  'const action = item.action',
   'releaseModalPointerLock',
   'releaseQueued',
   'setTimeout(() =>',
@@ -34,21 +41,23 @@ const requiredGuard = [
   'event.stopImmediatePropagation()',
   'new MutationObserver',
   'modalVisible: modalUIVisible',
-  'resumePending: () => resumeAfterModal'
+  'resumePending: () => resumeAfterModal',
+  'preflightActive: () => interactionPreflight'
 ];
 for (const snippet of requiredGuard) {
   if (!guard.includes(snippet)) throw new Error(`Popover input invariant missing: ${snippet}`);
 }
-if (guard.includes('preflightModalInteraction') || guard.includes('pendingInteraction') || guard.includes("event.code !== 'KeyE'")) {
-  throw new Error('Popover guard must not intercept or replay core physical/UI interaction input');
+if (guard.includes('pendingInteraction') || guard.includes('requestPointerLock')) {
+  throw new Error('Popover guard must not replay queued physical interactions or reacquire Pointer Lock from dialog-close events');
 }
-if (guard.includes('requestPointerLock')) throw new Error('Popover close path must not request Pointer Lock from the closing dialog event');
 if (guard.includes('__toonValleyDeferredModalExit') || guard.includes('modalExitTimer')) {
   throw new Error('Popover Pointer Lock release must use the shared deferred release queue, not a duplicate legacy timer path');
 }
-if (!guard.includes("if (window.ToonValley?.state?.modalOpen)")) throw new Error('Modal Pointer Lock exit must be scoped to active modal UI');
-if (!guard.includes("if (TV.state.modalOpen || modalUIVisible())")) throw new Error('Pause suppression must be scoped to visible/active modal UI');
-if (!guard.includes('nativeExitPointerLock?.call(doc)')) throw new Error('Deferred modal Pointer Lock release must execute the captured native exit');
+if (!guard.includes("/^Talk to /.test(prompt)")) throw new Error('NPC talk popovers must be classified for safe Pointer Lock preflight');
+if (!guard.includes('if (!interactionOpensModal(item)) return false')) throw new Error('Physical interactions must bypass modal preflight');
+if (!guard.includes('if (interactionPreflight || TV.state.modalOpen || modalUIVisible())')) throw new Error('Pause suppression must include the pre-modal Pointer Lock release window');
+if (!guard.includes("if (window.ToonValley?.state?.modalOpen)")) throw new Error('Programmatic modal Pointer Lock exit must remain scoped to active modal UI');
+if (!guard.includes('nativeExitPointerLock?.call(doc)')) throw new Error('Deferred programmatic modal release must execute the captured native exit');
 if (!guard.includes('return nativeExitPointerLock.call(this)')) throw new Error('Ordinary non-modal Pointer Lock exits must remain native and synchronous');
 
 console.log('Toon Valley service-worker stale-upgrade and shared modal lifecycle invariants passed.');
