@@ -30,17 +30,17 @@
   const modalActive = () => Boolean(TV.state.modalOpen || modalVisible());
   const hidePause = () => pauseScreen?.classList.add('hidden');
 
-  // Modal UI must stay responsive while the Three.js scene remains mounted.
-  // Pausing the update clock or removing the WebGL surface caused Chromium to
-  // stall while modal DOM was being composited. Pointer Lock handoff alone is
-  // sufficient; ordinary gameplay rendering can continue behind the overlay.
   function suspendRenderForModal() { return false; }
   function restoreRenderAfterModal() { return false; }
 
   function armResumeAfterModal() {
-    if (TV.DEVICE.touch || !TV.state.started) return;
+    // Only a genuine gameplay Pointer Lock handoff needs a resume gate. This keeps
+    // keyboard-opened UI safe in browsers/tests where the mouse was already free,
+    // and prevents a modal close from inventing a pause state that did not exist.
+    if (TV.DEVICE.touch || !TV.state.started || !gamePointerLocked()) return false;
     resumeAfterModal = true;
     hidePause();
+    return true;
   }
 
   document.addEventListener('pointerlockchange', () => {
@@ -51,14 +51,13 @@
     }
     if (resumeAfterModal || TV.state.modalOpen) {
       modalUnlocksSuppressed++;
-      resumeAfterModal = true;
-      hidePause();
+      if (resumeAfterModal) hidePause();
     }
   });
 
   function syncPauseAfterModal() {
     if (TV.state.modalOpen) {
-      if (!TV.DEVICE.touch) hidePause();
+      if (!TV.DEVICE.touch && resumeAfterModal) hidePause();
       return;
     }
 
@@ -92,6 +91,7 @@
     removesWebGLSurfaceDuringModal: false,
     modalVisible,
     modalActive,
+    gamePointerLocked,
     suspendRenderForModal,
     restoreRenderAfterModal,
     renderSuspended: () => false,
