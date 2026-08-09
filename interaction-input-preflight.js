@@ -7,6 +7,7 @@
   const pauseScreen = document.getElementById('pause-screen');
   let pendingInteraction = null;
   let pendingSince = 0;
+  let releaseScheduled = false;
   let unlockCount = 0;
   let physicalRelockCount = 0;
   let uiOpenCount = 0;
@@ -21,6 +22,12 @@
     return item && item.area === TV.state.area ? item : null;
   };
 
+  function clearPending() {
+    pendingInteraction = null;
+    pendingSince = 0;
+    releaseScheduled = false;
+  }
+
   function relockPhysicalInteraction() {
     if (TV.DEVICE.touch || !TV.state.started || TV.state.modalOpen || modalVisible() || gamePointerLocked()) return;
     physicalRelockCount++;
@@ -30,8 +37,7 @@
   function executePending() {
     if (!pendingInteraction || gamePointerLocked()) return false;
     const interaction = pendingInteraction;
-    pendingInteraction = null;
-    pendingSince = 0;
+    clearPending();
     hidePause();
     lastPrompt = interaction.prompt || 'Interact';
     lastError = null;
@@ -61,15 +67,29 @@
     if (!pendingInteraction) return;
     hidePause();
     if (executePending()) return;
-    if (performance.now() - pendingSince > 1200) {
+    if (performance.now() - pendingSince > 1400) {
       const prompt = pendingInteraction.prompt || 'interaction';
-      pendingInteraction = null;
-      pendingSince = 0;
+      clearPending();
       lastError = `Pointer Lock did not release for ${prompt}`;
       console.warn(lastError);
       return;
     }
     setTimeout(flushPending, 16);
+  }
+
+  function releasePointerLockAfterInput() {
+    releaseScheduled = false;
+    if (!pendingInteraction) return;
+    hidePause();
+    try {
+      if (gamePointerLocked()) document.exitPointerLock?.();
+    } catch (error) {
+      lastError = String(error?.stack || error?.message || error);
+      console.warn('Pointer Lock preflight release failed', error);
+      clearPending();
+      return;
+    }
+    setTimeout(flushPending, 0);
   }
 
   function beginPreflight(interaction) {
@@ -79,17 +99,15 @@
     unlockCount++;
     hidePause();
 
-    try {
-      document.exitPointerLock?.();
-    } catch (error) {
-      lastError = String(error?.stack || error?.message || error);
-      console.warn('Pointer Lock preflight release failed', error);
-      pendingInteraction = null;
-      pendingSince = 0;
-      return false;
+    // Never transition Pointer Lock from inside the active KeyE dispatch. Chromium,
+    // synthetic browser input and some desktop browsers can re-enter input handling
+    // when exitPointerLock() fires pointerlockchange synchronously, which previously
+    // left popover interactions hung or looking like a game crash. Complete the key
+    // event first, then release the mouse on the next task before running the action.
+    if (!releaseScheduled) {
+      releaseScheduled = true;
+      setTimeout(releasePointerLockAfterInput, 0);
     }
-
-    setTimeout(flushPending, 0);
     return true;
   }
 
@@ -111,6 +129,7 @@
 
   window.ToonValleyInteractionInputPreflight = Object.freeze({
     active: true,
+    deferredPointerRelease: true,
     interact,
     pending: () => Boolean(pendingInteraction),
     unlockCount: () => unlockCount,
