@@ -15,6 +15,7 @@ if (/interaction\.action\s*=/.test(dispatchSource)) throw new Error('Modal safet
 if (/style\.display\s*=\s*['"]none['"]/.test(dispatchSource)) throw new Error('Modal safety must never display:none the WebGL surface');
 if (/style\.visibility\s*=\s*['"]hidden['"]/.test(dispatchSource) || /pausedByVisibility\s*=\s*true/.test(dispatchSource)) throw new Error('Pointer Lock release must not hide or pause the live WebGL scene');
 if (!/transientRenderQuiesce:\s*false/.test(dispatchSource) || !/preUnlockRenderQuiesce:\s*false/.test(dispatchSource) || !/transientCanvasDetach:\s*false/.test(dispatchSource)) throw new Error('Pointer Lock handoff must keep rendering and canvas mounted');
+if (!/releasesPointerLockWithinInputEvent:\s*true/.test(dispatchSource)) throw new Error('Modal Pointer Lock release must begin inside the captured input task');
 
 const softwareWebGLArgs = ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'];
 const launchOptions = headedPointerLock
@@ -81,16 +82,15 @@ async function move(area, prompt) {
 
 async function cycle(label) {
   const before = await state();
-  const accepted = await page.evaluate(() => window.ToonValleyDeferredInteractionDispatch.dispatchNearestModal());
-  if (!accepted) throw new Error(`${label}: shared modal handoff rejected nearest interaction ${JSON.stringify(await state())}`);
+  await page.keyboard.press('e');
   try {
     await page.waitForFunction(selector => window.ToonValley.state.modalOpen && Boolean(document.querySelector(selector)), modalSelector, { timeout: 8000 });
   } catch (error) {
-    throw new Error(`${label}: modal did not open after handoff ${JSON.stringify(await state())}${errors.length ? `\n${errors.join('\n')}` : ''}`, { cause: error });
+    throw new Error(`${label}: modal did not open after real E-key handoff ${JSON.stringify(await state())}${errors.length ? `\n${errors.join('\n')}` : ''}`, { cause: error });
   }
   const opened = await state();
   if (opened.locked || !opened.modalOpen || !opened.overlay || !opened.pauseHidden || opened.renderPaused || opened.canvasVisibility === 'hidden' || !opened.resumePending || !opened.modalVisible || opened.suppressedUnlocks < 1) throw new Error(`${label}: bad open state ${JSON.stringify(opened)}`);
-  if (!opened.d || opened.d.dispatches <= before.d.dispatches || opened.d.attempts < 1 || opened.d.lastError || opened.d.lastDrop || opened.d.renderQuiesced || opened.d.canvasDetached || opened.d.handoffArmed) throw new Error(`${label}: dispatcher failed ${JSON.stringify(opened.d)}`);
+  if (!opened.d || opened.d.interceptions <= before.d.interceptions || opened.d.schedules <= before.d.schedules || opened.d.dispatches <= before.d.dispatches || opened.d.attempts < 1 || opened.d.lastError || opened.d.lastDrop || opened.d.renderQuiesced || opened.d.canvasDetached || opened.d.handoffArmed) throw new Error(`${label}: dispatcher failed ${JSON.stringify(opened.d)}`);
   const frameA = await page.evaluate(() => window.ToonValley.renderer.info.render.frame);
   await wait(250);
   const frameB = await page.evaluate(() => window.ToonValley.renderer.info.render.frame);
@@ -128,6 +128,7 @@ try {
     surface: window.ToonValleyPointerGuard.keepsWebGLSurfaceDuringModal,
     shared: window.ToonValleyDeferredInteractionDispatch.sharedModalHandoff,
     sentinel: window.ToonValleyDeferredInteractionDispatch.modalHandoffSentinel,
+    inInput: window.ToonValleyDeferredInteractionDispatch.releasesPointerLockWithinInputEvent,
     noQuiesce: !window.ToonValleyDeferredInteractionDispatch.transientRenderQuiesce && !window.ToonValleyDeferredInteractionDispatch.preUnlockRenderQuiesce,
     noDetach: !window.ToonValleyDeferredInteractionDispatch.transientCanvasDetach,
     preserveActions: window.ToonValleyDeferredInteractionDispatch.preservesInteractionActions,
