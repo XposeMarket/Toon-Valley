@@ -136,25 +136,26 @@
     pendingTimer = setTimeout(() => beginPointerUnlock(request), 0);
   }
 
+  function dispatchNearestModal() {
+    const interaction = TV.state.nearestInteractable;
+    if (!interaction || !opensModalUI(interaction) || !canRun(interaction)) return false;
+    interceptions++;
+    schedule(interaction);
+    return true;
+  }
+
   document.addEventListener('keydown', (event) => {
     if (event.code !== 'KeyE' || event.repeat || TV.DEVICE.touch || !TV.state.started || TV.state.modalOpen) return;
-    const interaction = TV.state.nearestInteractable;
-    if (!interaction || !opensModalUI(interaction) || !canRun(interaction)) return;
-    interceptions++;
+    if (!dispatchNearestModal()) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    schedule(interaction);
   }, true);
-
-  window.addEventListener('blur', () => {
-    if (!pendingRequest) return;
-    if (!pendingTimer) return;
-  });
 
   window.ToonValleyDeferredInteractionDispatch = Object.freeze({
     active: true,
     capturePhaseModalKeyGuard: true,
     interceptsOnlyModalKeyE: true,
+    sharedModalHandoff: true,
     executesAfterKeyboardEvent: true,
     releasesPointerLockBeforeUI: true,
     releasesPointerLockAfterKeyEvent: true,
@@ -176,7 +177,8 @@
     lastPrompt: () => lastPrompt,
     lastError: () => lastError,
     lastDrop: () => lastDrop,
-    opensModalUI
+    opensModalUI,
+    dispatchNearestModal
   });
 
   console.info('Toon Valley capture-phase modal interaction handoff ready');
