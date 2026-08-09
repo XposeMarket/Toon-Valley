@@ -30,6 +30,13 @@
   const modalUIVisible = () => Boolean(document.querySelector(modalSelector));
   const hidePause = () => pauseScreen?.classList.add('hidden');
 
+  function armResumeAfterModal() {
+    if (TV.DEVICE.touch || !TV.state.started) return;
+    resumeAfterModal = true;
+    hidePause();
+    queueMicrotask(hidePause);
+  }
+
   function revealResumeAfterModal() {
     if (!resumeAfterModal || TV.DEVICE.touch || !TV.state.started) return;
     if (TV.state.modalOpen || modalUIVisible() || gamePointerLocked()) return;
@@ -44,10 +51,8 @@
   document.addEventListener('pointerlockchange', () => {
     if (TV.DEVICE.touch || gamePointerLocked()) return;
     if (TV.state.modalOpen || modalUIVisible()) {
-      resumeAfterModal = Boolean(TV.state.started);
+      armResumeAfterModal();
       modalUnlocksSuppressed++;
-      hidePause();
-      queueMicrotask(hidePause);
     }
   }, true);
 
@@ -65,6 +70,7 @@
     nativeModalLifecycle: true,
     explicitResumeAfterModal: true,
     modalVisible: modalUIVisible,
+    armResumeAfterModal,
     resumePending: () => resumeAfterModal,
     suppressedModalUnlocks: () => modalUnlocksSuppressed
   });
