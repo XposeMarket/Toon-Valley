@@ -5,14 +5,27 @@
   if (!TV) return;
 
   const pauseScreen = document.getElementById('pause-screen');
-  let pending = false;
+  let pendingInteraction = null;
+  let pendingSince = 0;
   let unlockCount = 0;
   let physicalRelockCount = 0;
   let uiOpenCount = 0;
+  let lastPrompt = null;
+  let lastError = null;
 
   const hidePause = () => pauseScreen?.classList.add('hidden');
   const gamePointerLocked = () => document.pointerLockElement === TV.renderer?.domElement;
   const modalVisible = () => Boolean(window.ToonValleyPointerGuard?.modalVisible?.() || document.querySelector('.life-overlay,.mb-overlay,.ohx,#build-controls,#ohbuild,#bl-controls'));
+
+  function worldPosition(item) {
+    if (!item.object) return { x: item.x, z: item.z };
+    if (typeof item.object.getWorldPosition === 'function' && TV.THREE?.Vector3) {
+      const point = new TV.THREE.Vector3();
+      item.object.getWorldPosition(point);
+      return { x: point.x, z: point.z };
+    }
+    return { x: item.object.position.x, z: item.object.position.z };
+  }
 
   function nearestInteraction() {
     let nearest = null;
@@ -20,9 +33,8 @@
     for (const item of TV.interactables || []) {
       if (item.area !== TV.state.area) continue;
       if (item.enabled && !item.enabled()) continue;
-      const ix = item.object ? item.object.position.x : item.x;
-      const iz = item.object ? item.object.position.z : item.z;
-      const distance = Math.hypot(TV.player.position.x - ix, TV.player.position.z - iz);
+      const point = worldPosition(item);
+      const distance = Math.hypot(TV.player.position.x - point.x, TV.player.position.z - point.z);
       if (distance < item.radius && distance < nearestDistance) {
         nearest = item;
         nearestDistance = distance;
@@ -37,16 +49,22 @@
     try { TV.renderer.domElement.requestPointerLock?.(); } catch (error) { console.warn('Unable to restore Pointer Lock after physical interaction', error); }
   }
 
-  function executeAfterUnlock(interaction) {
-    if (!pending) return;
-    pending = false;
+  function executePending() {
+    if (!pendingInteraction || gamePointerLocked()) return false;
+    const interaction = pendingInteraction;
+    pendingInteraction = null;
+    pendingSince = 0;
     hidePause();
+    lastPrompt = interaction.prompt || 'Interact';
+    lastError = null;
+
     try {
       interaction.action?.();
     } catch (error) {
+      lastError = String(error?.stack || error?.message || error);
       console.error('Interaction failed after Pointer Lock preflight', error);
       setTimeout(relockPhysicalInteraction, 0);
-      return;
+      return true;
     }
 
     queueMicrotask(() => {
@@ -58,38 +76,43 @@
         setTimeout(relockPhysicalInteraction, 0);
       }
     });
+    return true;
+  }
+
+  function flushPending() {
+    if (!pendingInteraction) return;
+    hidePause();
+    if (executePending()) return;
+    if (performance.now() - pendingSince > 1200) {
+      const prompt = pendingInteraction.prompt || 'interaction';
+      pendingInteraction = null;
+      pendingSince = 0;
+      lastError = `Pointer Lock did not release for ${prompt}`;
+      console.warn(lastError);
+      return;
+    }
+    requestAnimationFrame(flushPending);
   }
 
   function beginPreflight(interaction) {
-    if (pending || !interaction || typeof interaction.action !== 'function') return false;
-    pending = true;
+    if (pendingInteraction || !interaction || typeof interaction.action !== 'function') return false;
+    pendingInteraction = interaction;
+    pendingSince = performance.now();
     unlockCount++;
     hidePause();
-
-    let executed = false;
-    const run = () => {
-      if (executed) return;
-      executed = true;
-      executeAfterUnlock(interaction);
-    };
-
-    const onUnlock = () => {
-      if (gamePointerLocked()) return;
-      hidePause();
-      queueMicrotask(hidePause);
-      setTimeout(run, 0);
-    };
-    document.addEventListener('pointerlockchange', onUnlock, { capture: true, once: true });
 
     try {
       document.exitPointerLock?.();
     } catch (error) {
+      lastError = String(error?.stack || error?.message || error);
       console.warn('Pointer Lock preflight release failed', error);
-      run();
-      return true;
+      pendingInteraction = null;
+      pendingSince = 0;
+      return false;
     }
 
-    setTimeout(run, 80);
+    queueMicrotask(flushPending);
+    requestAnimationFrame(flushPending);
     return true;
   }
 
@@ -97,6 +120,10 @@
     if (TV.DEVICE.touch || !TV.state.started || TV.state.modalOpen || !gamePointerLocked()) return false;
     return beginPreflight(nearestInteraction());
   }
+
+  document.addEventListener('pointerlockchange', () => {
+    if (!gamePointerLocked()) queueMicrotask(flushPending);
+  }, true);
 
   document.addEventListener('keydown', (event) => {
     if (event.code !== 'KeyE' || event.repeat) return;
@@ -108,11 +135,13 @@
   window.ToonValleyInteractionInputPreflight = Object.freeze({
     active: true,
     interact,
-    pending: () => pending,
+    pending: () => Boolean(pendingInteraction),
     unlockCount: () => unlockCount,
     physicalRelockCount: () => physicalRelockCount,
     uiOpenCount: () => uiOpenCount,
-    nearestInteraction
+    nearestInteraction,
+    lastPrompt: () => lastPrompt,
+    lastError: () => lastError
   });
 
   console.info('Toon Valley interaction input preflight ready');
