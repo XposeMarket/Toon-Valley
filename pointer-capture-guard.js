@@ -44,10 +44,12 @@
     resumeAfterModal = false;
   }
 
-  // The core game treats every Pointer Lock loss as an ordinary pause. Modal UI is
-  // a deliberate exception: it must release the mouse without opening the pause
-  // overlay on top of the popover. Consume only that modal-triggered unlock here.
-  document.addEventListener('pointerlockchange', (event) => {
+  // Pointer Lock change events target document. The core game registered its
+  // document listener before this module loads, so a document-level capture
+  // listener can still lose ordering at the event target. Listen on window's
+  // capture phase instead: window is an ancestor of document in the event path,
+  // so intentional modal unlocks are intercepted before the core pause handler.
+  window.addEventListener('pointerlockchange', (event) => {
     if (TV.DEVICE.touch || gamePointerLocked()) return;
     if (TV.state.modalOpen || modalUIVisible()) {
       event.stopImmediatePropagation();
