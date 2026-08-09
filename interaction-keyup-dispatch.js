@@ -5,9 +5,12 @@
   if (!TV) return;
 
   let armedInteraction = null;
+  let arms = 0;
+  let keyups = 0;
   let dispatches = 0;
   let lastPrompt = null;
   let lastError = null;
+  let lastDrop = null;
 
   const eligible = () => !TV.DEVICE.touch && TV.state.started && !TV.state.modalOpen;
   const currentInteraction = () => {
@@ -20,28 +23,47 @@
   document.addEventListener('keydown', (event) => {
     if (event.code !== 'KeyE' || event.repeat || !eligible()) return;
     const interaction = currentInteraction();
-    if (!interaction) return;
+    if (!interaction) {
+      lastDrop = 'keydown-no-current-interaction';
+      return;
+    }
     armedInteraction = interaction;
+    arms++;
+    lastPrompt = interaction.prompt || 'Interact';
+    lastDrop = null;
     event.preventDefault();
     event.stopImmediatePropagation();
   }, true);
 
   document.addEventListener('keyup', (event) => {
-    if (event.code !== 'KeyE' || !armedInteraction) return;
+    if (event.code !== 'KeyE') return;
+    keyups++;
+    if (!armedInteraction) {
+      lastDrop = 'keyup-not-armed';
+      return;
+    }
     const interaction = armedInteraction;
     armedInteraction = null;
     event.preventDefault();
     event.stopImmediatePropagation();
 
-    // Never construct UI, release Pointer Lock, or start a physical gesture inside
-    // the browser's active keyboard dispatch. Run the unchanged registered action
-    // on the next task after keyup has fully propagated through Chromium/Safari.
     setTimeout(() => {
-      if (!eligible()) return;
-      if (interaction.area !== TV.state.area || (interaction.enabled && !interaction.enabled())) return;
+      if (!eligible()) {
+        lastDrop = 'dispatch-not-eligible';
+        return;
+      }
+      if (interaction.area !== TV.state.area) {
+        lastDrop = 'dispatch-area-changed';
+        return;
+      }
+      if (interaction.enabled && !interaction.enabled()) {
+        lastDrop = 'dispatch-disabled';
+        return;
+      }
       dispatches++;
       lastPrompt = interaction.prompt || 'Interact';
       lastError = null;
+      lastDrop = null;
       try {
         interaction.action();
       } catch (error) {
@@ -57,9 +79,12 @@
     active: true,
     executesAfterKeyup: true,
     pending: () => Boolean(armedInteraction),
+    armCount: () => arms,
+    keyupCount: () => keyups,
     dispatchCount: () => dispatches,
     lastPrompt: () => lastPrompt,
-    lastError: () => lastError
+    lastError: () => lastError,
+    lastDrop: () => lastDrop
   });
 
   console.info('Toon Valley keyup interaction dispatcher ready');
