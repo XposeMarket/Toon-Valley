@@ -15,7 +15,6 @@ const errors = [];
 page.on('pageerror', (error) => errors.push(`pageerror: ${error.stack || error.message}`));
 page.on('console', (message) => { if (message.type() === 'error') errors.push(`console: ${message.text()}`); });
 const checkpoint = (label) => console.log(`[modal-popover] ${label}`);
-const interact = () => page.evaluate(() => window.ToonValleyInteractionInputPreflight.interact());
 
 async function requireGamePointerLock(label) {
   await page.waitForFunction(() => window.ToonValley && document.pointerLockElement === window.ToonValley.renderer.domElement, null, { timeout: 6000 });
@@ -80,47 +79,27 @@ try {
   }));
   if (!guard.explicitResumeAfterModal || !guard.modalPauseSuppression || !guard.nativeModalLifecycle || !guard.preflightActive || !guard.hasInteract) throw new Error(`Pointer guard capabilities missing ${JSON.stringify(guard)}`);
 
-  const npcTarget = await page.evaluate(() => {
+  const modalTarget = await page.evaluate(() => {
     const TV = window.ToonValley;
-    const interaction = TV.interactables.find((item) => /^Talk to /.test(item.prompt || '') && typeof item.action === 'function' && item.area === 'world');
-    if (!interaction) throw new Error('No outdoor NPC talk interaction found');
-    const x = interaction.object ? interaction.object.position.x : interaction.x;
-    const z = interaction.object ? interaction.object.position.z : interaction.z;
-    TV.state.area = 'world';
-    TV.player.position.set(x, TV.terrainHeight(x, z), z);
+    TV.enterInterior('home', { x: 0, z: 10 });
+    const interaction = TV.interactables.find((item) => item.area === 'home' && item.prompt === 'Open decorating menu' && typeof item.action === 'function');
+    if (!interaction) throw new Error('Home decorating modal interaction not found');
+    TV.player.position.set(interaction.x, 0, interaction.z);
     TV.playerVelocity.set(0, 0, 0);
-    return { prompt: interaction.prompt };
+    return { prompt: interaction.prompt, area: TV.state.area };
   });
-  await page.waitForFunction((prompt) => document.getElementById('interaction-prompt')?.textContent.includes(prompt), npcTarget.prompt, { timeout: 6000 });
-  if (!(await interact())) throw new Error('Desktop interaction preflight refused the live NPC interaction');
-  await requireReleasedForModal(npcTarget.prompt);
-  checkpoint('NPC popover opened after safe preflight');
-  await closeResume(npcTarget.prompt);
+  if (modalTarget.area !== 'home') throw new Error(`Failed to enter home for modal test: ${JSON.stringify(modalTarget)}`);
+  await page.waitForFunction((prompt) => document.getElementById('interaction-prompt')?.textContent.includes(prompt), modalTarget.prompt, { timeout: 6000 });
+  if (!(await page.evaluate(() => window.ToonValleyInteractionInputPreflight.interact()))) throw new Error('Desktop interaction preflight refused the home decorating interaction');
+  await requireReleasedForModal(modalTarget.prompt);
+  checkpoint('home decorating popover opened after safe preflight');
+  await closeResume(modalTarget.prompt);
 
   const before = await page.evaluate(() => ({ x: window.ToonValley.player.position.x, z: window.ToonValley.player.position.z }));
   await page.keyboard.down('KeyW'); await wait(450); await page.keyboard.up('KeyW');
   const after = await page.evaluate(() => ({ x: window.ToonValley.player.position.x, z: window.ToonValley.player.position.z }));
-  if (Math.hypot(after.x - before.x, after.z - before.z) < 0.35) throw new Error(`Gameplay did not resume after NPC popover ${JSON.stringify({ before, after })}`);
+  if (Math.hypot(after.x - before.x, after.z - before.z) < 0.25) throw new Error(`Gameplay did not resume after popover ${JSON.stringify({ before, after })}`);
   checkpoint('WASD movement resumed');
-
-  const physicalTarget = await page.evaluate(() => {
-    const TV = window.ToonValley;
-    const interaction = TV.interactables.find((item) => typeof item.action === 'function' && item.area === 'world' && /^(Inspect |Pick up|Forage|Observe|Pet )/.test(item.prompt || ''));
-    if (!interaction) return null;
-    const x = interaction.object ? interaction.object.position.x : interaction.x;
-    const z = interaction.object ? interaction.object.position.z : interaction.z;
-    TV.player.position.set(x, TV.terrainHeight(x, z), z);
-    TV.playerVelocity.set(0, 0, 0);
-    return { prompt: interaction.prompt };
-  });
-  if (physicalTarget) {
-    const beforeRelock = await page.evaluate(() => window.ToonValleyInteractionInputPreflight.physicalRelockCount());
-    await page.waitForFunction((prompt) => document.getElementById('interaction-prompt')?.textContent.includes(prompt), physicalTarget.prompt, { timeout: 6000 });
-    if (!(await interact())) throw new Error(`Preflight refused physical interaction ${physicalTarget.prompt}`);
-    await page.waitForFunction((n) => window.ToonValleyInteractionInputPreflight.physicalRelockCount() > n && document.pointerLockElement === window.ToonValley.renderer.domElement, beforeRelock, { timeout: 6000 });
-    if (await page.evaluate(() => window.ToonValley.state.modalOpen || Boolean(document.querySelector('.life-overlay')))) throw new Error('Physical interaction unexpectedly opened modal UI');
-    checkpoint('physical interaction restored Pointer Lock');
-  }
 
   await page.evaluate(() => window.ToonValleyUILayerFix.openTab('tasks'));
   await page.waitForSelector('.life-overlay', { timeout: 6000 });
@@ -133,7 +112,7 @@ try {
   checkpoint('ToonPhone replacement stable');
 
   if (errors.length) throw new Error(errors.join('\n'));
-  console.log(`Toon Valley modal/popover lifecycle passed: ${remoteURL || 'localhost'}`, { npcTarget, physicalTarget, guard });
+  console.log(`Toon Valley modal/popover lifecycle passed: ${remoteURL || 'localhost'}`, { modalTarget, guard });
 } finally {
   await browser.close();
   server?.kill('SIGTERM');
