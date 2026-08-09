@@ -11,9 +11,6 @@
   let attempts = 0;
   let dispatches = 0;
   let interceptions = 0;
-  let renderQuiesced = false;
-  let canvasDetached = false;
-  let quiesceCount = 0;
   let lastPrompt = null;
   let lastError = null;
   let lastDrop = null;
@@ -42,31 +39,12 @@
       (!interaction.enabled || interaction.enabled());
   };
 
-  function quiesceRenderForUnlock() {
-    if (renderQuiesced) return;
-    renderQuiesced = true;
-    quiesceCount++;
-    TV.state.pausedByVisibility = true;
-    TV.state.lastTime = performance.now();
-    const canvas = TV.renderer?.domElement;
-    if (canvas && canvas.style.visibility !== 'hidden') {
-      canvas.dataset.tvUnlockVisibility = canvas.style.visibility || '';
-      canvas.style.visibility = 'hidden';
-      canvasDetached = true;
-    }
-  }
-
-  function resumeRenderAfterUnlock() {
-    const canvas = TV.renderer?.domElement;
-    if (canvasDetached && canvas) {
-      canvas.style.visibility = canvas.dataset.tvUnlockVisibility || '';
-      delete canvas.dataset.tvUnlockVisibility;
-    }
-    canvasDetached = false;
-    if (!renderQuiesced) return;
-    renderQuiesced = false;
-    TV.state.pausedByVisibility = Boolean(document.hidden);
-    TV.state.lastTime = performance.now();
+  function clearPending(request, drop = null) {
+    if (pendingRequest !== request) return;
+    clearTimeout(pendingTimer);
+    pendingTimer = 0;
+    pendingRequest = null;
+    if (drop) lastDrop = drop;
   }
 
   function executeRequest(request) {
@@ -74,7 +52,6 @@
     clearTimeout(pendingTimer);
     pendingTimer = 0;
     pendingRequest = null;
-    resumeRenderAfterUnlock();
     attempts++;
     const { interaction } = request;
     if (!canRun(interaction)) {
@@ -98,14 +75,11 @@
     pendingTimer = 0;
     const { interaction } = request;
     if (!canRun(interaction)) {
-      resumeRenderAfterUnlock();
-      pendingRequest = null;
-      lastDrop = 'unlock-no-longer-valid';
+      clearPending(request, 'unlock-no-longer-valid');
       return;
     }
 
     if (document.pointerLockElement !== TV.renderer?.domElement) {
-      resumeRenderAfterUnlock();
       pendingTimer = setTimeout(() => executeRequest(request), 0);
       return;
     }
@@ -124,12 +98,10 @@
     const finishIfUnlocked = () => {
       if (pendingRequest !== request) {
         cleanup();
-        resumeRenderAfterUnlock();
         return true;
       }
       if (document.pointerLockElement === TV.renderer?.domElement) return false;
       cleanup();
-      resumeRenderAfterUnlock();
       clearTimeout(pendingTimer);
       pendingTimer = setTimeout(() => executeRequest(request), 0);
       return true;
@@ -139,22 +111,17 @@
       pendingTimer = 0;
       if (pendingRequest !== request) {
         cleanup();
-        resumeRenderAfterUnlock();
         return;
       }
       if (!canRun(interaction)) {
         cleanup();
-        resumeRenderAfterUnlock();
-        pendingRequest = null;
-        lastDrop = 'unlock-no-longer-valid';
+        clearPending(request, 'unlock-no-longer-valid');
         return;
       }
       if (finishIfUnlocked()) return;
-      if (performance.now() - startedAt >= 1200) {
+      if (performance.now() - startedAt >= 1500) {
         cleanup();
-        resumeRenderAfterUnlock();
-        pendingRequest = null;
-        lastDrop = 'pointer-lock-release-timeout';
+        clearPending(request, 'pointer-lock-release-timeout');
         console.warn('Toon Valley modal interaction cancelled because Pointer Lock did not release in time', interaction.prompt);
         return;
       }
@@ -162,14 +129,11 @@
     };
 
     document.addEventListener('pointerlockchange', onPointerLockChange);
-    quiesceRenderForUnlock();
     try {
       document.exitPointerLock?.();
     } catch (error) {
       cleanup();
-      resumeRenderAfterUnlock();
-      pendingRequest = null;
-      lastDrop = 'pointer-lock-release-error';
+      clearPending(request, 'pointer-lock-release-error');
       lastError = String(error?.stack || error?.message || error);
       console.warn('Pointer Lock release before modal interaction failed', error);
       return;
@@ -179,7 +143,6 @@
 
   function schedule(interaction) {
     clearTimeout(pendingTimer);
-    resumeRenderAfterUnlock();
     schedules++;
     const request = { id: ++requestSequence, interaction };
     pendingRequest = request;
@@ -203,7 +166,11 @@
     event.stopImmediatePropagation();
   }, true);
 
-  window.addEventListener('pagehide', resumeRenderAfterUnlock);
+  window.addEventListener('pagehide', () => {
+    clearTimeout(pendingTimer);
+    pendingTimer = 0;
+    pendingRequest = null;
+  });
 
   window.ToonValleyDeferredInteractionDispatch = Object.freeze({
     active: true,
@@ -220,16 +187,16 @@
     observableUnlockPolling: true,
     eventDrivenUnlockHandoff: true,
     raceSafeSingleDispatch: true,
-    transientRenderQuiesce: true,
-    transientCanvasDetach: true,
-    preUnlockRenderQuiesce: true,
+    transientRenderQuiesce: false,
+    transientCanvasDetach: false,
+    preUnlockRenderQuiesce: false,
     keepsRenderWorkDuringModal: true,
     pausesRenderWorkForModal: false,
     preModalRenderSuspension: false,
     pending: () => Boolean(pendingTimer || pendingRequest),
-    renderQuiesced: () => renderQuiesced,
-    canvasDetached: () => canvasDetached,
-    quiesceCount: () => quiesceCount,
+    renderQuiesced: () => false,
+    canvasDetached: () => false,
+    quiesceCount: () => 0,
     interceptionCount: () => interceptions,
     scheduleCount: () => schedules,
     attemptCount: () => attempts,
