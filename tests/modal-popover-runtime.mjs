@@ -13,14 +13,15 @@ const guardSource = readFileSync(new URL('../pointer-capture-guard.js', import.m
 const uiSource = readFileSync(new URL('../ui-layer-fix.js', import.meta.url), 'utf8');
 if (!/executesOnKeyup:\s*true/.test(dispatchSource)) throw new Error('Desktop interaction handoff must execute on KeyE keyup');
 if (!/preservesPhysicalActionPath:\s*true/.test(dispatchSource)) throw new Error('Physical action path invariant missing');
-if (!/explicitPointerLockHandoff:\s*true/.test(dispatchSource) || !/actionRunsAfterUnlock:\s*true/.test(dispatchSource)) throw new Error('Modal Pointer Lock handoff invariant missing');
+if (!/explicitPointerLockHandoff:\s*true/.test(dispatchSource) || !/actionRunsAfterUnlock:\s*true/.test(dispatchSource) || !/prefreezesWebGLBeforeModal:\s*true/.test(dispatchSource)) throw new Error('Modal handoff invariant missing');
 if (!/guard\?\.armResumeAfterModal\?\.\(\)/.test(dispatchSource)) throw new Error('Modal handoff must arm pause suppression before unlock');
+if (!/ui\?\.beginPopoverTransition\?\.\(\)/.test(dispatchSource)) throw new Error('Dispatcher must prefreeze WebGL before modal construction');
 if (!/document\.exitPointerLock\?\.\(\)/.test(dispatchSource)) throw new Error('Dispatcher must release Pointer Lock itself');
 if (!/document\.addEventListener\('pointerlockchange',\s*\(\)\s*=>\s*finishModalHandoff/.test(dispatchSource)) throw new Error('Modal action must wait for pointerlockchange handoff');
 if (!/handoffTimer\s*=\s*setTimeout\(\(\)\s*=>\s*finishModalHandoff\('timeout'\),\s*180\)/.test(dispatchSource)) throw new Error('Modal handoff needs a bounded browser fallback');
 if (/interaction\.action\s*=/.test(dispatchSource)) throw new Error('Desktop E safety must not replace registered interaction actions');
 if (!/!gamePointerLocked\(\)/.test(guardSource)) throw new Error('Modal resume guard must only arm from genuine gameplay Pointer Lock');
-if (!/freezesWebGLDrawsUnderModal:true/.test(uiSource) || !/canvasRemainsMounted:true/.test(uiSource)) throw new Error('Popover GPU compositing guard missing');
+if (!/freezesWebGLDrawsUnderModal:true/.test(uiSource) || !/prefreezesBeforeModalConstruction:true/.test(uiSource) || !/canvasRemainsMounted:true/.test(uiSource)) throw new Error('Popover GPU compositing guard missing');
 
 const browser = await chromium.launch({ headless: true, args: ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 760 } });
@@ -54,9 +55,12 @@ async function openRealInteraction(area, prompt, label) {
   const before = await snapshot();
   const result = await page.evaluate(({ area, prompt }) => {
     const TV = window.ToonValley;
+    const UI = window.ToonValleyUILayerFix;
     const interaction = TV.interactables.find((item) => item.area === area && item.prompt === prompt && typeof item.action === 'function');
     if (!interaction) return { missing: true };
-    interaction.action();
+    UI.beginPopoverTransition();
+    try { interaction.action(); }
+    finally { UI.endPopoverTransition(); }
     return { missing: false, modalOpen: TV.state.modalOpen };
   }, { area, prompt });
   if (result.missing) throw new Error(`${label}: interaction missing`);
@@ -99,10 +103,12 @@ try {
     keyup: window.ToonValleyDeferredInteractionDispatch.executesOnKeyup,
     explicitHandoff: window.ToonValleyDeferredInteractionDispatch.explicitPointerLockHandoff,
     actionAfterUnlock: window.ToonValleyDeferredInteractionDispatch.actionRunsAfterUnlock,
+    prefreeze: window.ToonValleyDeferredInteractionDispatch.prefreezesWebGLBeforeModal,
     preserveActions: window.ToonValleyDeferredInteractionDispatch.preservesInteractionActions,
     preservePhysical: window.ToonValleyDeferredInteractionDispatch.preservesPhysicalActionPath,
     gpuSafe: window.ToonValleyUILayerFix.gpuSafePopoverCompositing,
     freezesDraws: window.ToonValleyUILayerFix.freezesWebGLDrawsUnderModal,
+    prefreezes: window.ToonValleyUILayerFix.prefreezesBeforeModalConstruction,
     canvasMounted: window.ToonValleyUILayerFix.canvasRemainsMounted
   }));
   if (!Object.values(caps).every(Boolean)) throw new Error(`Missing modal safety capabilities ${JSON.stringify(caps)}`);
