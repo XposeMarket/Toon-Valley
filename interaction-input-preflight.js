@@ -16,24 +16,10 @@
   const hidePause = () => pauseScreen?.classList.add('hidden');
   const gamePointerLocked = () => document.pointerLockElement === TV.renderer?.domElement;
   const modalVisible = () => Boolean(window.ToonValleyPointerGuard?.modalVisible?.() || document.querySelector('.life-overlay,.mb-overlay,.ohx,#build-controls,#ohbuild,#bl-controls'));
-
-  function nearestInteraction() {
-    if (TV.state.nearestInteractable && TV.state.nearestInteractable.area === TV.state.area) return TV.state.nearestInteractable;
-    let nearest = null;
-    let nearestDistance = Infinity;
-    for (const item of TV.interactables || []) {
-      if (item.area !== TV.state.area) continue;
-      if (item.enabled && !item.enabled()) continue;
-      const ix = item.object ? item.object.position.x : item.x;
-      const iz = item.object ? item.object.position.z : item.z;
-      const distance = Math.hypot(TV.player.position.x - ix, TV.player.position.z - iz);
-      if (distance < item.radius && distance < nearestDistance) {
-        nearest = item;
-        nearestDistance = distance;
-      }
-    }
-    return nearest;
-  }
+  const nearestInteraction = () => {
+    const item = TV.state.nearestInteractable;
+    return item && item.area === TV.state.area ? item : null;
+  };
 
   function relockPhysicalInteraction() {
     if (TV.DEVICE.touch || !TV.state.started || TV.state.modalOpen || modalVisible() || gamePointerLocked()) return;
