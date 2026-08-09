@@ -14,6 +14,7 @@
   let lastPrompt = null;
   let lastError = null;
   let lastDrop = null;
+  let handoffModalArmed = false;
 
   const opensModalUI = (interaction) => {
     const prompt = interaction?.prompt || '';
@@ -30,20 +31,28 @@
       /^Talk to /.test(prompt);
   };
 
-  const canRun = (interaction) => {
+  const canRun = (interaction, allowHandoff = false) => {
     const action = interaction?.action;
     return TV.state.started &&
-      !TV.state.modalOpen &&
+      (!TV.state.modalOpen || (allowHandoff && handoffModalArmed)) &&
       interaction?.area === TV.state.area &&
       typeof action === 'function' &&
       (!interaction.enabled || interaction.enabled());
   };
+
+  function disarmHandoff(showResume = true) {
+    if (!handoffModalArmed) return;
+    handoffModalArmed = false;
+    if (TV.state.modalOpen) TV.setModalOpen(false);
+    if (showResume) window.ToonValleyPointerGuard?.syncPauseAfterModal?.();
+  }
 
   function clearPending(request, drop = null) {
     if (pendingRequest !== request) return;
     clearTimeout(pendingTimer);
     pendingTimer = 0;
     pendingRequest = null;
+    if (request?.modalSentinel) disarmHandoff(true);
     if (drop) lastDrop = drop;
   }
 
@@ -54,18 +63,24 @@
     pendingRequest = null;
     attempts++;
     const { interaction } = request;
-    if (!canRun(interaction)) {
+    if (!canRun(interaction, true)) {
+      if (request.modalSentinel) disarmHandoff(true);
       lastDrop = 'dispatch-no-longer-valid';
       return;
     }
+    if (request.modalSentinel) disarmHandoff(false);
     dispatches++;
     lastPrompt = interaction.prompt || 'Interact';
     lastError = null;
     lastDrop = null;
     try {
       interaction.action();
+      // A modal-classified interaction must replace the handoff sentinel with real
+      // UI synchronously. If it does not, restore normal pause/resume behavior.
+      if (!TV.state.modalOpen) window.ToonValleyPointerGuard?.syncPauseAfterModal?.();
     } catch (error) {
       lastError = String(error?.stack || error?.message || error);
+      window.ToonValleyPointerGuard?.syncPauseAfterModal?.();
       console.error('Toon Valley deferred modal interaction failed', error);
     }
   }
@@ -87,6 +102,11 @@
     TV.playerVelocity?.set?.(0, 0, 0);
     TV.state.jumpVelocity = 0;
     window.ToonValleyPointerGuard?.armResumeAfterModal?.();
+    // Mark the unlock as an intentional modal transition before Pointer Lock changes.
+    // This closes the race where the core pause handler could cover the popover.
+    handoffModalArmed = true;
+    request.modalSentinel = true;
+    TV.setModalOpen(true);
 
     const startedAt = performance.now();
     let cleaned = false;
@@ -113,7 +133,7 @@
         cleanup();
         return;
       }
-      if (!canRun(interaction)) {
+      if (!canRun(interaction, true)) {
         cleanup();
         clearPending(request, 'unlock-no-longer-valid');
         return;
@@ -142,9 +162,9 @@
   }
 
   function schedule(interaction) {
-    clearTimeout(pendingTimer);
+    if (pendingRequest) clearPending(pendingRequest, 'superseded');
     schedules++;
-    const request = { id: ++requestSequence, interaction };
+    const request = { id: ++requestSequence, interaction, modalSentinel: false };
     pendingRequest = request;
     lastPrompt = interaction.prompt || 'Interact';
     lastDrop = null;
@@ -167,6 +187,7 @@
   }, true);
 
   window.addEventListener('pagehide', () => {
+    if (pendingRequest) clearPending(pendingRequest, 'pagehide');
     clearTimeout(pendingTimer);
     pendingTimer = 0;
     pendingRequest = null;
@@ -177,6 +198,7 @@
     capturePhaseModalKeyGuard: true,
     interceptsOnlyModalKeyE: true,
     sharedModalHandoff: true,
+    modalHandoffSentinel: true,
     executesAfterKeyboardEvent: true,
     releasesPointerLockBeforeUI: true,
     releasesPointerLockAfterKeyEvent: true,
@@ -194,6 +216,7 @@
     pausesRenderWorkForModal: false,
     preModalRenderSuspension: false,
     pending: () => Boolean(pendingTimer || pendingRequest),
+    handoffArmed: () => handoffModalArmed,
     renderQuiesced: () => false,
     canvasDetached: () => false,
     quiesceCount: () => 0,
