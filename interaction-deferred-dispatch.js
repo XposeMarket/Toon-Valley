@@ -5,10 +5,13 @@
   if (!TV) return;
 
   let armedInteraction = null;
+  let handoffInteraction = null;
+  let handoffTimer = 0;
   let arms = 0;
   let keyups = 0;
   let dispatches = 0;
   let modalDispatches = 0;
+  let pointerHandoffs = 0;
   let lastPrompt = null;
   let lastError = null;
   let lastDrop = null;
@@ -53,36 +56,78 @@
     return true;
   }
 
-  function execute(interaction) {
+  function runAction(interaction, modal) {
     if (!stillValid(interaction)) return;
-    const modal = opensModalUI(interaction);
     dispatches++;
-    if (modal) {
-      modalDispatches++;
-      // Arm pause suppression before the interaction has any chance to release
-      // browser Pointer Lock. This also protects older modal helpers that unlock
-      // before their DOM is appended.
-      window.ToonValleyPointerGuard?.armResumeAfterModal?.();
-    }
+    if (modal) modalDispatches++;
     lastPrompt = interaction.prompt || 'Interact';
     lastError = null;
     lastDrop = null;
     try {
-      // Preserve every registered interaction action exactly as authored. Physical
-      // quest actions still flow through interaction-experience.js; this dispatcher
-      // only moves desktop E execution from keydown to the matching keyup so the
-      // browser input task has settled before a modal changes Pointer Lock state.
       interaction.action();
       if (modal && !TV.state.modalOpen) window.ToonValleyPointerGuard?.syncPauseAfterModal?.();
     } catch (error) {
       lastError = String(error?.stack || error?.message || error);
       window.ToonValleyPointerGuard?.syncPauseAfterModal?.();
-      console.error('Toon Valley keyup interaction failed', error);
+      console.error('Toon Valley deferred interaction failed', error);
     }
   }
 
+  function finishModalHandoff(reason = 'pointerlockchange') {
+    if (!handoffInteraction) return;
+    if (document.pointerLockElement === TV.renderer?.domElement && reason !== 'timeout') return;
+    const interaction = handoffInteraction;
+    handoffInteraction = null;
+    clearTimeout(handoffTimer);
+    handoffTimer = 0;
+    runAction(interaction, true);
+  }
+
+  function execute(interaction) {
+    if (!stillValid(interaction)) return;
+    const modal = opensModalUI(interaction);
+    if (!modal) {
+      runAction(interaction, false);
+      return;
+    }
+
+    const guard = window.ToonValleyPointerGuard;
+    const locked = Boolean(guard?.gamePointerLocked?.());
+    if (!locked) {
+      runAction(interaction, true);
+      return;
+    }
+
+    // Critical desktop modal handoff: never let an interaction action release
+    // Pointer Lock while it is simultaneously constructing modal DOM. That exact
+    // synchronous transition can stall Chromium/WebGL on some machines. Release
+    // first, let pointerlockchange settle, then execute the authored action.
+    if (handoffInteraction) {
+      lastDrop = 'modal-handoff-already-pending';
+      return;
+    }
+    guard?.armResumeAfterModal?.();
+    handoffInteraction = interaction;
+    pointerHandoffs++;
+    lastPrompt = interaction.prompt || 'Interact';
+    lastDrop = null;
+    try {
+      document.exitPointerLock?.();
+    } catch (error) {
+      console.warn('Pointer Lock release failed; continuing modal handoff', error);
+      finishModalHandoff('release-error');
+      return;
+    }
+    // Browser engines occasionally omit pointerlockchange during focus changes.
+    // The bounded fallback avoids dropping the interaction while still keeping the
+    // modal action outside the input task that initiated the unlock.
+    handoffTimer = setTimeout(() => finishModalHandoff('timeout'), 180);
+  }
+
+  document.addEventListener('pointerlockchange', () => finishModalHandoff('pointerlockchange'));
+
   document.addEventListener('keydown', (event) => {
-    if (event.code !== 'KeyE' || event.repeat || !eligible()) return;
+    if (event.code !== 'KeyE' || event.repeat || !eligible() || handoffInteraction) return;
     const interaction = currentInteraction();
     if (!interaction) {
       lastDrop = 'keydown-no-current-interaction';
@@ -118,13 +163,15 @@
     active: true,
     capturePhaseModalKeyGuard: true,
     executesOnKeyup: true,
-    nativePointerLockRelease: true,
+    explicitPointerLockHandoff: true,
+    actionRunsAfterUnlock: true,
     sharedModalHandoff: true,
     preservesInteractionActions: true,
     preservesPhysicalActionPath: true,
     interceptsOnlyDesktopE: true,
     opensModalUI,
     pending: () => Boolean(armedInteraction),
+    handoffPending: () => Boolean(handoffInteraction),
     handoffArmed: () => Boolean(window.ToonValleyPointerGuard?.resumePending?.()),
     renderQuiesced: () => false,
     canvasDetached: () => false,
@@ -133,11 +180,12 @@
     attemptCount: () => dispatches,
     dispatchCount: () => dispatches,
     modalDispatchCount: () => modalDispatches,
+    pointerHandoffCount: () => pointerHandoffs,
     keyupCount: () => keyups,
     lastPrompt: () => lastPrompt,
     lastError: () => lastError,
     lastDrop: () => lastDrop
   });
 
-  console.info('Toon Valley desktop E keyup dispatcher ready');
+  console.info('Toon Valley desktop modal handoff ready');
 })();
