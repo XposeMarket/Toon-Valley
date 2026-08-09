@@ -88,7 +88,16 @@ jobs:
           npm install --no-save playwright@1.55.0
           npx playwright install --with-deps chromium
       - name: Modal and popover Pointer Lock lifecycle test
-        run: timeout 120s node tests/modal-popover-runtime.mjs
+        run: |
+          set -o pipefail
+          timeout 120s node tests/modal-popover-runtime.mjs 2>&1 | tee modal-popover.log
+      - name: Upload modal regression log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: modal-popover-log
+          path: modal-popover.log
+          if-no-files-found: error
       - name: Mobile browser smoke test
         run: timeout 150s node tests/mobile-smoke.mjs
       - name: World extension runtime test
