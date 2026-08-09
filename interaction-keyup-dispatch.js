@@ -58,23 +58,9 @@
       setTimeout(() => execute(interaction), 0);
       return;
     }
-
     preflightUnlocks++;
-    guard.prepareModalInteraction();
-    const started = performance.now();
-    const waitForUnlock = () => {
-      if (guard.modalInteractionReady()) {
-        setTimeout(() => execute(interaction), 0);
-        return;
-      }
-      if (performance.now() - started > 1800) {
-        lastDrop = 'modal-unlock-timeout';
-        console.error('Toon Valley modal interaction Pointer Lock release timed out', interaction.prompt);
-        return;
-      }
-      setTimeout(waitForUnlock, 12);
-    };
-    setTimeout(waitForUnlock, 0);
+    const accepted = guard.prepareModalInteraction(() => execute(interaction));
+    if (!accepted && !guard.modalActionPending?.()) setTimeout(() => execute(interaction), 0);
   }
 
   document.addEventListener('keydown', (event) => {
@@ -112,7 +98,7 @@
     active: true,
     executesAfterKeyup: true,
     preflightsModalUnlock: true,
-    timerBasedUnlockHandoff: true,
+    guardOwnedUnlockHandoff: true,
     pending: () => Boolean(armedInteraction),
     armCount: () => arms,
     keyupCount: () => keyups,
