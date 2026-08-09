@@ -12,6 +12,7 @@
   let dispatches = 0;
   let interceptions = 0;
   let renderQuiesced = false;
+  let canvasDetached = false;
   let quiesceCount = 0;
   let lastPrompt = null;
   let lastError = null;
@@ -47,9 +48,21 @@
     quiesceCount++;
     TV.state.pausedByVisibility = true;
     TV.state.lastTime = performance.now();
+    const canvas = TV.renderer?.domElement;
+    if (canvas && canvas.style.visibility !== 'hidden') {
+      canvas.dataset.tvUnlockVisibility = canvas.style.visibility || '';
+      canvas.style.visibility = 'hidden';
+      canvasDetached = true;
+    }
   }
 
   function resumeRenderAfterUnlock() {
+    const canvas = TV.renderer?.domElement;
+    if (canvasDetached && canvas) {
+      canvas.style.visibility = canvas.dataset.tvUnlockVisibility || '';
+      delete canvas.dataset.tvUnlockVisibility;
+    }
+    canvasDetached = false;
     if (!renderQuiesced) return;
     renderQuiesced = false;
     TV.state.pausedByVisibility = Boolean(document.hidden);
@@ -208,12 +221,14 @@
     eventDrivenUnlockHandoff: true,
     raceSafeSingleDispatch: true,
     transientRenderQuiesce: true,
+    transientCanvasDetach: true,
     preUnlockRenderQuiesce: true,
     keepsRenderWorkDuringModal: true,
     pausesRenderWorkForModal: false,
     preModalRenderSuspension: false,
     pending: () => Boolean(pendingTimer || pendingRequest),
     renderQuiesced: () => renderQuiesced,
+    canvasDetached: () => canvasDetached,
     quiesceCount: () => quiesceCount,
     interceptionCount: () => interceptions,
     scheduleCount: () => schedules,
