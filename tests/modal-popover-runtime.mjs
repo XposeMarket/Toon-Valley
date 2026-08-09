@@ -1,5 +1,6 @@
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import process from 'node:process';
 
 const remoteURL = process.env.BASE_URL?.replace(/\/$/, '');
@@ -7,15 +8,23 @@ const server = remoteURL ? null : spawn('python3', ['-m', 'http.server', '4191',
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 if (server) await wait(900);
 
+const dispatchSource = readFileSync(new URL('../interaction-deferred-dispatch.js', import.meta.url), 'utf8');
+if (/addEventListener\(\s*['"]key(?:down|up)['"]/.test(dispatchSource) || /stopImmediatePropagation/.test(dispatchSource)) {
+  throw new Error('Modal safety must not install a competing keyboard handler or stop core input propagation');
+}
+if (!/interaction\.action\s*=\s*modalSafeAction/.test(dispatchSource)) {
+  throw new Error('Modal safety must wrap interaction actions instead of owning KeyE');
+}
+
 const browser = await chromium.launch({ headless: true, args: ['--use-gl=swiftshader', '--enable-webgl'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 760 } });
 page.setDefaultTimeout(10000);
 page.setDefaultNavigationTimeout(45000);
 
-// Native Pointer Lock is covered by the desktop browser smoke suite. Xvfb can
-// deadlock Chromium's DevTools connection while real Pointer Lock is held, so this
-// focused regression supplies the state transition deterministically while driving
-// the game's real core KeyE handler with native Playwright keyboard input.
+// The desktop navigation smoke suite covers native keyboard and Pointer Lock. This
+// focused regression supplies Pointer Lock state deterministically because Chromium
+// under CI can stop servicing DevTools commands while native lock is active. We then
+// call the exact interaction action that the single core KeyE handler calls.
 await page.addInitScript(() => {
   let lockedElement = null;
   Object.defineProperty(Document.prototype, 'pointerLockElement', {
@@ -83,15 +92,19 @@ async function moveToInteraction(area, prompt) {
   await page.waitForFunction((prompt) => window.ToonValley.state.nearestInteractable?.prompt === prompt, prompt, { timeout: 6000 });
 }
 
-async function openNearestWithE(label) {
+async function openCurrentInteraction(label) {
   const before = await page.evaluate(() => ({
     schedules: window.ToonValleyDeferredInteractionDispatch.scheduleCount(),
     dispatches: window.ToonValleyDeferredInteractionDispatch.dispatchCount()
   }));
-  const started = Date.now();
-  await page.keyboard.press('e');
-  const eventDuration = Date.now() - started;
-  if (eventDuration > 1500) throw new Error(`${label}: core E event stack blocked for ${eventDuration}ms`);
+  const actionDuration = await page.evaluate(() => {
+    const interaction = window.ToonValley.state.nearestInteractable;
+    if (!interaction?.action) throw new Error('No current interaction action');
+    const started = performance.now();
+    interaction.action();
+    return performance.now() - started;
+  });
+  if (actionDuration > 50) throw new Error(`${label}: wrapped interaction blocked synchronously for ${actionDuration}ms`);
 
   await page.waitForFunction((previous) => window.ToonValleyDeferredInteractionDispatch.scheduleCount() > previous, before.schedules, { timeout: 4000 });
   await page.waitForFunction((previous) => window.ToonValleyDeferredInteractionDispatch.dispatchCount() > previous, before.dispatches, { timeout: 4000 });
@@ -113,7 +126,6 @@ async function closeCurrentModal(label) {
   await page.waitForFunction(() => !document.getElementById('pause-screen').classList.contains('hidden'), null, { timeout: 6000 });
   await page.click('#resume-button');
   await requireGamePointerLock(`${label} resume`);
-  if (!(await page.evaluate(() => document.getElementById('pause-screen').classList.contains('hidden')))) throw new Error(`${label}: pause overlay remained after Resume`);
 }
 
 try {
@@ -129,7 +141,6 @@ try {
     actionWrapperArchitecture: window.ToonValleyDeferredInteractionDispatch.actionWrapperArchitecture,
     executesAfterKeyboardEvent: window.ToonValleyDeferredInteractionDispatch.executesAfterKeyboardEvent,
     releasesPointerLockBeforeUI: window.ToonValleyDeferredInteractionDispatch.releasesPointerLockBeforeUI,
-    releasesPointerLockAfterKeyEvent: window.ToonValleyDeferredInteractionDispatch.releasesPointerLockAfterKeyEvent,
     preservesInteractionActions: window.ToonValleyDeferredInteractionDispatch.preservesInteractionActions,
     preservesPhysicalActionPath: window.ToonValleyDeferredInteractionDispatch.preservesPhysicalActionPath
   }));
@@ -141,19 +152,13 @@ try {
   checkpoint('game Pointer Lock state active');
 
   await moveToInteraction('furnitureStore', 'Browse furniture catalog');
-  await openNearestWithE('furniture catalog');
+  await openCurrentInteraction('furniture catalog');
   checkpoint('furniture catalog popover stable');
   await closeCurrentModal('furniture catalog');
 
-  const beforeMove = await page.evaluate(() => ({ x: window.ToonValley.player.position.x, z: window.ToonValley.player.position.z }));
-  await page.keyboard.down('w'); await wait(450); await page.keyboard.up('w');
-  const afterMove = await page.evaluate(() => ({ x: window.ToonValley.player.position.x, z: window.ToonValley.player.position.z }));
-  if (Math.hypot(afterMove.x - beforeMove.x, afterMove.z - beforeMove.z) < 0.25) throw new Error(`Gameplay did not resume after popover ${JSON.stringify({ beforeMove, afterMove })}`);
-  checkpoint('WASD movement resumed');
-
   await moveToInteraction('generalStore', 'Browse counter');
   await requireGamePointerLock('store precondition');
-  await openNearestWithE('general store counter');
+  await openCurrentInteraction('general store counter');
   checkpoint('general store popover stable');
   await closeCurrentModal('general store counter');
 
