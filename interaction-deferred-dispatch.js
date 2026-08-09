@@ -50,13 +50,16 @@
     pendingTimer = 0;
     pendingUnlock = null;
     attempts++;
+    console.info('[modal-dispatch] execute-attempt', interaction?.prompt, { area: TV.state.area, modalOpen: TV.state.modalOpen, locked: document.pointerLockElement === TV.renderer?.domElement });
     if (!canDefer(interaction)) {
       lastDrop = 'dispatch-no-longer-valid';
+      console.info('[modal-dispatch] dropped', interaction?.prompt, lastDrop);
       return;
     }
     const target = unwrapAction(original);
     if (typeof target !== 'function') {
       lastDrop = 'dispatch-missing-original';
+      console.info('[modal-dispatch] dropped', interaction?.prompt, lastDrop);
       return;
     }
     dispatches++;
@@ -64,7 +67,9 @@
     lastError = null;
     lastDrop = null;
     try {
+      console.info('[modal-dispatch] target-before', lastPrompt);
       target.apply(interaction, args);
+      console.info('[modal-dispatch] target-after', lastPrompt, { modalOpen: TV.state.modalOpen, overlay: Boolean(document.querySelector('.life-overlay,.ohx,.mb-overlay,#build-controls,#ohbuild,#bl-controls')) });
     } catch (error) {
       lastError = String(error?.stack || error?.message || error);
       console.error('Toon Valley deferred interaction failed', error);
@@ -98,6 +103,7 @@
         return;
       }
       if (document.pointerLockElement !== TV.renderer?.domElement) {
+        console.info('[modal-dispatch] unlock-observed', interaction.prompt, Math.round(performance.now() - startedAt));
         pendingTimer = setTimeout(() => execute(interaction, original, args), 0);
         return;
       }
@@ -115,9 +121,6 @@
     } catch (error) {
       console.warn('Pointer Lock release before modal interaction failed', error);
     }
-    // Do not depend on pointerlockchange ordering. Browsers and emulated CI streams
-    // can deliver that event at different points; confirm the observable lock state
-    // on the next task and keep polling briefly until it is actually released.
     pendingTimer = setTimeout(verifyUnlock, 0);
   }
 
@@ -127,6 +130,7 @@
     pendingUnlock = interaction;
     lastPrompt = interaction.prompt || 'Interact';
     lastDrop = null;
+    console.info('[modal-dispatch] scheduled', lastPrompt, schedules);
     pendingTimer = setTimeout(() => beginPointerUnlock(interaction, original, args), 0);
   }
 
