@@ -78,6 +78,22 @@
     return { x: stop.x + base.x, z: stop.z + base.z };
   }
 
+  function processStopArrival(index) {
+    Steward.commuters.forEach(commuter => {
+      const trip = trips.get(commuter);
+      if (!trip || !commuter.userData.boarded || index !== trip.destinationIndex) return;
+      const destination = stops[trip.destinationIndex];
+      const p = waitPosition(commuter, destination);
+      commuter.userData.boarded = false;
+      commuter.visible = true;
+      commuter.userData.stop = destination;
+      commuter.position.set(p.x, TV.terrainHeight(p.x, p.z), p.z);
+      commuter.rotation.y = destination.angle;
+      trip.completedTrips += 1;
+      trip.disembarkingUntil = clock + Math.max(1.2, Transit.stopDwellSeconds + .25);
+    });
+  }
+
   function updateTrips() {
     const current = nearestStopIndex();
     Steward.commuters.forEach(commuter => {
@@ -107,19 +123,8 @@
         trips.delete(commuter);
         return;
       }
-
-      if (commuter.userData.boarded && Transit.stopped && current.distance < 7 && current.index === trip.destinationIndex && clock - trip.boardedAt > 1.2) {
-        const destination = stops[trip.destinationIndex];
-        const p = waitPosition(commuter, destination);
-        commuter.userData.boarded = false;
-        commuter.visible = true;
-        commuter.userData.stop = destination;
-        commuter.position.set(p.x, TV.terrainHeight(p.x, p.z), p.z);
-        commuter.rotation.y = destination.angle;
-        trip.completedTrips += 1;
-        trip.disembarkingUntil = clock + Math.max(1.2, Transit.stopDwellSeconds + .25);
-      }
     });
+    if (Transit.stopped && current.distance < 7) processStopArrival(current.index);
   }
 
   TV.registerUpdateHook(dt => {
@@ -162,6 +167,7 @@
     getTripState,
     getBoardState,
     chooseDestination,
+    processStopArrival,
     refresh: () => { updateTrips(); updateBoards(); }
   });
   console.info('Toon Valley transit rider life ready', { commuters: Steward.commuters.length, boards: stopBoards.length, destinationTrips: true });
