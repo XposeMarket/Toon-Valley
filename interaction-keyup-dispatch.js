@@ -8,13 +8,11 @@
   let arms = 0;
   let keyups = 0;
   let dispatches = 0;
-  let preflightUnlocks = 0;
   let lastPrompt = null;
   let lastError = null;
   let lastDrop = null;
 
   const eligible = () => !TV.DEVICE.touch && TV.state.started && !TV.state.modalOpen;
-  const modalPrompt = (prompt = '') => /^(?:Browse counter|Order snack|Shop outdoor market|Open job & property desk|Browse furniture catalog|Open decorating menu|Talk to )/.test(prompt);
   const currentInteraction = () => {
     const item = TV.state.nearestInteractable;
     if (!item || item.area !== TV.state.area || typeof item.action !== 'function') return null;
@@ -52,17 +50,6 @@
     }
   }
 
-  function executeAfterModalUnlock(interaction) {
-    const guard = window.ToonValleyPointerGuard;
-    if (!modalPrompt(interaction.prompt) || !guard?.preflightModalUnlock || document.pointerLockElement !== TV.renderer.domElement) {
-      setTimeout(() => execute(interaction), 0);
-      return;
-    }
-    preflightUnlocks++;
-    const accepted = guard.prepareModalInteraction(() => execute(interaction));
-    if (!accepted && !guard.modalActionPending?.()) setTimeout(() => execute(interaction), 0);
-  }
-
   document.addEventListener('keydown', (event) => {
     if (event.code !== 'KeyE' || event.repeat || !eligible()) return;
     const interaction = currentInteraction();
@@ -89,7 +76,10 @@
     armedInteraction = null;
     event.preventDefault();
     event.stopImmediatePropagation();
-    executeAfterModalUnlock(interaction);
+    // Execute after keyup has fully returned, but while Pointer Lock is still owned
+    // by the game. Modal actions construct/mark their UI first; the pointer guard
+    // then defers the modal-owned exitPointerLock call to the following task.
+    setTimeout(() => execute(interaction), 0);
   }, true);
 
   window.addEventListener('blur', () => { armedInteraction = null; });
@@ -97,13 +87,11 @@
   window.ToonValleyInteractionKeyupDispatch = Object.freeze({
     active: true,
     executesAfterKeyup: true,
-    preflightsModalUnlock: true,
-    guardOwnedUnlockHandoff: true,
+    modalFirstDispatch: true,
     pending: () => Boolean(armedInteraction),
     armCount: () => arms,
     keyupCount: () => keyups,
     dispatchCount: () => dispatches,
-    preflightUnlockCount: () => preflightUnlocks,
     lastPrompt: () => lastPrompt,
     lastError: () => lastError,
     lastDrop: () => lastDrop
