@@ -1,9 +1,9 @@
 'use strict';
 
-const CACHE_NAME = 'toon-valley-v33';
+const CACHE_NAME = 'toon-valley-v34';
 const CORE = [
   './', './index.html', './style.css', './life.css', './game.js', './life.js',
-  './pointer-capture-guard.js', './ui-layer-fix.js', './world-events.js', './town-activities.js',
+  './pointer-capture-guard.js', './interaction-input-preflight.js', './ui-layer-fix.js', './world-events.js', './town-activities.js',
   './valley-services.js', './valley-routines.js', './central-plaza.js', './central-plaza-core.js',
   './public-interiors.js', './moonbeam-theater.js', './owned-home.js', './world-polish.js',
   './bluebell-lake.js', './interaction-world-fix.js', './valley-transit.js', './community-garden.js',
@@ -56,9 +56,9 @@ self.addEventListener('activate', (event) => {
     await self.clients.claim();
 
     // Only an actual upgrade from an older Toon Valley worker gets a forced
-    // navigation. Fresh installs remain passive during activation. Existing v32
-    // windows are already executing stale JavaScript, so after the new worker has
-    // claimed them, navigate those windows once to load the current release.
+    // navigation. Fresh installs remain passive during activation. Existing stale
+    // windows are already executing old JavaScript, so after the new worker claims
+    // them, navigate those windows once to load the current release.
     if (hadPriorRelease) {
       const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
       await Promise.allSettled(windows.map((client) => client.navigate(client.url)));
