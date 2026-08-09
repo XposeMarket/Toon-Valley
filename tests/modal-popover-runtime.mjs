@@ -96,10 +96,10 @@ try {
 
   const guard = await page.evaluate(() => ({
     explicitResumeAfterModal: window.ToonValleyPointerGuard.explicitResumeAfterModal,
-    modalExitSynchronous: window.ToonValleyPointerGuard.modalExitSynchronous,
+    modalExitDeferred: window.ToonValleyPointerGuard.modalExitDeferred,
     modalPauseSuppression: window.ToonValleyPointerGuard.modalPauseSuppression
   }));
-  if (!guard.explicitResumeAfterModal || !guard.modalExitSynchronous || !guard.modalPauseSuppression) throw new Error(`Pointer guard capabilities missing ${JSON.stringify(guard)}`);
+  if (!guard.explicitResumeAfterModal || !guard.modalExitDeferred || !guard.modalPauseSuppression) throw new Error(`Pointer guard capabilities missing ${JSON.stringify(guard)}`);
 
   const npcTarget = await page.evaluate(() => {
     const TV = window.ToonValley;
