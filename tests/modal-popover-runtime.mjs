@@ -92,12 +92,24 @@ async function moveToInteraction(area, prompt) {
   if (!state.nearestWrapped) throw new Error(`${prompt}: nearest interaction was not modal-safe wrapped ${JSON.stringify(state)}`);
 }
 
+async function fireInteractKey() {
+  // Playwright/CDP can deadlock a synthetic keyup if Pointer Lock is intentionally
+  // released between its keydown and keyup commands. Dispatch the same DOM events
+  // directly so the core game key handler still owns KeyE while the browser's
+  // Pointer Lock transition remains independently observable.
+  await page.evaluate(() => {
+    const init = { key: 'e', code: 'KeyE', keyCode: 69, which: 69, bubbles: true, cancelable: true };
+    document.dispatchEvent(new KeyboardEvent('keydown', init));
+    setTimeout(() => document.dispatchEvent(new KeyboardEvent('keyup', init)), 0);
+  });
+}
+
 async function openCurrentInteraction(label) {
   const before = await page.evaluate(() => ({
     schedules: window.ToonValleyDeferredInteractionDispatch.scheduleCount(),
     dispatches: window.ToonValleyDeferredInteractionDispatch.dispatchCount()
   }));
-  await page.keyboard.press('e');
+  await fireInteractKey();
   await page.waitForFunction((previous) => window.ToonValleyDeferredInteractionDispatch.scheduleCount() > previous, before.schedules, { timeout: 4000, polling: 50 });
   await page.waitForFunction((selector) => window.ToonValley.state.modalOpen && Boolean(document.querySelector(selector)), modalSelector, { timeout: 6000, polling: 50 });
   const state = await diagnostics();
@@ -107,7 +119,6 @@ async function openCurrentInteraction(label) {
   if (!state.modalOpen || state.renderPaused || state.webglSurfaceHidden || !state.overlay || !state.closeButton || !state.pauseHidden || state.pointerLocked || !state.modalVisible || !state.resumePending || state.suppressedUnlocks < 1) {
     throw new Error(`${label}: modal Pointer Lock/live-render regression ${JSON.stringify(state)}`);
   }
-  // Prove the renderer/main world remains responsive while the popover is open.
   const frameA = await page.evaluate(() => window.ToonValley.renderer.info.render.frame);
   await wait(250);
   const frameB = await page.evaluate(() => window.ToonValley.renderer.info.render.frame);
