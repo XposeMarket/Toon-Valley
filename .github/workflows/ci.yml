@@ -42,6 +42,7 @@ jobs:
           node --check valley-community-life.js
           node --check community-objectives.js
           node --check community-service-routes.js
+          node --check transit-stewardship.js
           node --check living-interiors.js
           node --check navigation-polish.js
           node --check side-quest-overhaul.js
@@ -71,6 +72,7 @@ jobs:
           node --check tests/indoor-service-quests-runtime.mjs
           node --check tests/community-life-runtime.mjs
           node --check tests/community-service-routes-runtime.mjs
+          node --check tests/transit-stewardship-runtime.mjs
           node --check tests/modal-popover-runtime.mjs
           node --check tests/navigation-polish-static.mjs
           node --check tests/production-extensions.mjs
@@ -112,6 +114,8 @@ jobs:
         run: timeout 150s node tests/community-life-runtime.mjs
       - name: Community lake and park service lifecycle test
         run: timeout 150s node tests/community-service-routes-runtime.mjs
+      - name: Transit stewardship and commuter life test
+        run: timeout 150s node tests/transit-stewardship-runtime.mjs
       - name: Local browser smoke test
         run: timeout 150s node tests/smoke.mjs
       - name: Production mobile browser check
@@ -164,6 +168,11 @@ jobs:
         env:
           BASE_URL: https://toon-valley.vercel.app
         run: timeout 150s node tests/community-service-routes-runtime.mjs
+      - name: Production transit stewardship verification
+        if: github.event_name == 'push'
+        env:
+          BASE_URL: https://toon-valley.vercel.app
+        run: timeout 150s node tests/transit-stewardship-runtime.mjs
       - name: Production world extension verification
         if: github.event_name == 'push'
         env:
