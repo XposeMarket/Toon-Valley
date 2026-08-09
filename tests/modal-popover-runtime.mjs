@@ -102,9 +102,20 @@ try {
   await page.waitForFunction((prompt) => document.getElementById('interaction-prompt')?.textContent.includes(prompt), npcTarget.prompt, { timeout: 6000 });
   checkpoint(`real prompt ready: ${npcTarget.prompt}`);
 
-  // Exercise the actual desktop E-key route. The interaction preflight must release
-  // Pointer Lock first, then invoke the already-wrapped live action on the next task.
   await page.keyboard.press('KeyE');
+  await wait(300);
+  const keyDiag = await page.evaluate(() => ({
+    unlocks: window.ToonValleyInteractionInputPreflight.unlockCount(),
+    pending: window.ToonValleyInteractionInputPreflight.pending(),
+    ui: window.ToonValleyInteractionInputPreflight.uiOpenCount(),
+    relocks: window.ToonValleyInteractionInputPreflight.physicalRelockCount(),
+    nearest: window.ToonValleyInteractionInputPreflight.nearestInteraction()?.prompt || null,
+    pointerLocked: Boolean(document.pointerLockElement),
+    modalOpen: window.ToonValley.state.modalOpen,
+    overlay: Boolean(document.querySelector('.life-overlay')),
+    pauseHidden: document.getElementById('pause-screen').classList.contains('hidden')
+  }));
+  checkpoint(`post-E diagnostic ${JSON.stringify(keyDiag)}`);
   await requireReleasedForModal(npcTarget.prompt);
   checkpoint('real E-key NPC interaction opened popover without pause overlay');
   await closeResumeAndRequireGameplay(npcTarget.prompt);
@@ -121,7 +132,6 @@ try {
   if (Math.hypot(after.x - before.x, after.z - before.z) < 0.35) throw new Error(`Gameplay did not resume after NPC popover ${JSON.stringify({ before, after })}`);
   checkpoint('WASD movement resumed');
 
-  // A physical action must use the same preflight without turning into a UI flow.
   const physicalTarget = await page.evaluate(() => {
     const TV = window.ToonValley;
     const interaction = TV.interactables.find((item) => typeof item.action === 'function' && item.area === 'world' && /^(Inspect |Pick up|Forage|Observe|Pet )/.test(item.prompt || ''));
