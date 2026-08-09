@@ -16,9 +16,10 @@ if (/style\.display\s*=\s*['"]none['"]/.test(dispatchSource)) throw new Error('M
 if (/style\.visibility\s*=\s*['"]hidden['"]/.test(dispatchSource) || /pausedByVisibility\s*=\s*true/.test(dispatchSource)) throw new Error('Pointer Lock release must not hide or pause the live WebGL scene');
 if (!/transientRenderQuiesce:\s*false/.test(dispatchSource) || !/preUnlockRenderQuiesce:\s*false/.test(dispatchSource) || !/transientCanvasDetach:\s*false/.test(dispatchSource)) throw new Error('Pointer Lock handoff must keep rendering and canvas mounted');
 
+const softwareWebGLArgs = ['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'];
 const launchOptions = headedPointerLock
-  ? { headless: false, channel: 'chrome', args: ['--enable-webgl'] }
-  : { headless: true, args: ['--use-gl=swiftshader', '--enable-webgl'] };
+  ? { headless: false, args: softwareWebGLArgs }
+  : { headless: true, args: softwareWebGLArgs };
 const browser = await chromium.launch(launchOptions);
 const page = await browser.newPage({ viewport: { width: 1280, height: 760 } });
 page.setDefaultTimeout(10000);
@@ -133,7 +134,7 @@ try {
   await move('furnitureStore', 'Browse furniture catalog'); await lock('furniture'); await cycle('furniture');
   await move('generalStore', 'Browse counter'); await lock('store'); await cycle('store');
   if (errors.length) throw new Error(errors.join('\n'));
-  console.log('Toon Valley modal/popover lifecycle passed', { headedPointerLock, browserChannel: headedPointerLock ? 'chrome' : 'chromium', final: await state() });
+  console.log('Toon Valley modal/popover lifecycle passed', { headedPointerLock, browserChannel: headedPointerLock ? 'chromium-headed-swiftshader' : 'chromium-headless-swiftshader', final: await state() });
 } finally {
   await browser.close();
   server?.kill('SIGTERM');
