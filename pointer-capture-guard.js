@@ -30,6 +30,7 @@
   let resumeAfterModal = false;
   let releaseQueued = false;
   let interactionPreflight = false;
+  let lastPreflight = { phase: 'idle', prompt: null, error: null };
 
   const gamePointerLocked = () => Boolean(TV.renderer?.domElement && document.pointerLockElement === TV.renderer.domElement);
   const modalUIVisible = () => Boolean(document.querySelector(modalSelector));
@@ -62,26 +63,35 @@
     resumeAfterModal = true;
     hidePause();
     const action = item.action;
+    lastPreflight = { phase: 'releasing', prompt: item.prompt || '', error: null };
 
     try {
       nativeExitPointerLock?.call(document);
+      lastPreflight = { phase: 'released', prompt: item.prompt || '', error: null };
     } catch (error) {
       interactionPreflight = false;
+      lastPreflight = { phase: 'release-error', prompt: item.prompt || '', error: String(error?.stack || error) };
       console.warn('UI interaction Pointer Lock preflight failed', error);
       queueMicrotask(revealResumeAfterModal);
       return true;
     }
 
     setTimeout(() => {
-      interactionPreflight = false;
-      if (!TV.state.started || TV.state.modalOpen || modalUIVisible()) {
+      if (!TV.state.started) {
+        interactionPreflight = false;
+        lastPreflight = { phase: 'cancelled', prompt: item.prompt || '', error: 'game-not-started' };
         queueMicrotask(revealResumeAfterModal);
         return;
       }
+      lastPreflight = { phase: 'executing', prompt: item.prompt || '', error: null };
       try {
         action();
+        lastPreflight = { phase: modalUIVisible() || TV.state.modalOpen ? 'opened' : 'executed', prompt: item.prompt || '', error: null };
       } catch (error) {
+        lastPreflight = { phase: 'action-error', prompt: item.prompt || '', error: String(error?.stack || error) };
         console.error('Deferred UI interaction failed', error);
+      } finally {
+        interactionPreflight = false;
       }
       queueMicrotask(revealResumeAfterModal);
     }, 0);
@@ -103,8 +113,6 @@
     }, 0);
   }
 
-  // If a modal is opened programmatically while Pointer Lock is still active, move
-  // the release onto the next task. Ordinary Esc/pause exits remain native.
   if (documentProto && typeof nativeExitPointerLock === 'function' && !modalExitDeferred) {
     function guardedExitPointerLock() {
       if (window.ToonValley?.state?.modalOpen) {
@@ -118,19 +126,12 @@
     modalExitDeferred = true;
   }
 
-  // UI-producing E interactions are special: building a dialog and then exiting
-  // Pointer Lock from the same keydown can wedge Chromium/WebKit. Release first,
-  // suppress the normal pause transition, then invoke only the captured UI action on
-  // the next task. Physical interactions are never intercepted and continue through
-  // the shared interaction-experience gesture queue unchanged.
   document.addEventListener('keydown', (event) => {
     if (event.code !== 'KeyE' || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
     if (TV.state.modalOpen || modalUIVisible()) return;
     preflightUIInteraction(event, TV.state.nearestInteractable);
   }, true);
 
-  // The core pointerlockchange listener treats every unlock as a pause. Modal and UI
-  // preflight unlocks are intentional, so intercept them before the core listener.
   document.addEventListener('pointerlockchange', (event) => {
     if (TV.DEVICE.touch) return;
     if (gamePointerLocked()) return;
@@ -141,7 +142,6 @@
     }
   }, true);
 
-  // Fallback for programmatic modal opens and unusual Pointer Lock timing.
   const observer = new MutationObserver(() => {
     if (TV.state.modalOpen || modalUIVisible()) releaseModalPointerLock(document);
     queueMicrotask(revealResumeAfterModal);
@@ -161,6 +161,7 @@
     modalVisible: modalUIVisible,
     resumePending: () => resumeAfterModal,
     preflightActive: () => interactionPreflight,
+    preflightState: () => ({ ...lastPreflight }),
     interactionOpensModal,
     forceModalRelease: () => releaseModalPointerLock(document)
   });
