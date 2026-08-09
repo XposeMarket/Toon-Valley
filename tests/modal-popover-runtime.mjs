@@ -40,6 +40,10 @@ async function requireGamePointerLock(label) {
 }
 
 async function requireReleasedForModal(label) {
+  await page.waitForFunction(() => window.__tvModalActionResult?.finished === true, null, { timeout: 6000 });
+  const actionResult = await page.evaluate(() => window.__tvModalActionResult);
+  if (actionResult.error) throw new Error(`${label}: registered interaction action threw: ${actionResult.error}`);
+  if (!actionResult.overlay) throw new Error(`${label}: registered interaction returned without creating .life-overlay: ${JSON.stringify(actionResult)}`);
   await page.waitForSelector('.life-overlay', { timeout: 6000 });
   await page.waitForFunction(() => !document.pointerLockElement && window.ToonValley.state.modalOpen === true, null, { timeout: 6000 });
   const state = await page.evaluate(() => ({
@@ -96,15 +100,26 @@ try {
     TV.playerVelocity.set(0, 0, 0);
     TV.state.cameraReady = false;
     window.__tvModalTestInteraction = interaction;
-    return { prompt: interaction.prompt, x, z };
+    return { prompt: interaction.prompt, x, z, actionSource: String(interaction.action).slice(0, 240) };
   });
   await page.waitForFunction((prompt) => document.getElementById('interaction-prompt')?.textContent.includes(prompt), npcTarget.prompt, { timeout: 6000 });
-  checkpoint(`real prompt ready: ${npcTarget.prompt}`);
+  checkpoint(`real prompt ready: ${npcTarget.prompt} :: ${npcTarget.actionSource}`);
 
-  // This is the exact registered action that core interact() calls after selecting the
-  // nearby NPC. Run it from the browser's next task so a genuine synchronous modal
-  // freeze surfaces as a short Playwright timeout instead of wedging the protocol.
-  await page.evaluate(() => setTimeout(() => window.__tvModalTestInteraction.action(), 0));
+  await page.evaluate(() => {
+    window.__tvModalActionResult = { started: false, finished: false, overlay: false, modalOpen: false, error: null };
+    setTimeout(() => {
+      window.__tvModalActionResult.started = true;
+      try {
+        window.__tvModalTestInteraction.action();
+      } catch (error) {
+        window.__tvModalActionResult.error = String(error?.stack || error);
+      } finally {
+        window.__tvModalActionResult.overlay = Boolean(document.querySelector('.life-overlay'));
+        window.__tvModalActionResult.modalOpen = Boolean(window.ToonValley.state.modalOpen);
+        window.__tvModalActionResult.finished = true;
+      }
+    }, 0);
+  });
   await requireReleasedForModal(npcTarget.prompt);
   checkpoint('registered NPC interaction opened popover and released Pointer Lock safely');
   await closeResumeAndRequireGameplay(npcTarget.prompt);
@@ -124,7 +139,9 @@ try {
   checkpoint('WASD movement resumed');
 
   await page.evaluate(() => window.ToonValleyUILayerFix.openTab('tasks'));
-  await requireReleasedForModal('ToonPhone Tasks');
+  window.__tvModalActionResult = undefined;
+  await page.waitForSelector('.life-overlay', { timeout: 6000 });
+  await page.waitForFunction(() => !document.pointerLockElement && window.ToonValley.state.modalOpen === true, null, { timeout: 6000 });
   checkpoint('ToonPhone opened through desktop UI layer');
   await page.click('[data-tab="inventory"]');
   await page.waitForSelector('.life-overlay [data-tab="inventory"].active', { timeout: 6000 });
