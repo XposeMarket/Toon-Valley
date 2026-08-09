@@ -17,30 +17,6 @@ page.on('console', (message) => { if (message.type() === 'error') errors.push(`c
 const checkpoint = (label) => console.log(`[modal-popover] ${label}`);
 const pressInteract = () => page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyE', key: 'e', bubbles: true, cancelable: true })));
 
-await page.addInitScript(() => {
-  Object.defineProperty(Document.prototype, 'pointerLockElement', {
-    configurable: true,
-    get() { return this.__tvTestPointerLock || null; }
-  });
-  Object.defineProperty(Element.prototype, 'requestPointerLock', {
-    configurable: true,
-    writable: true,
-    value: function requestPointerLock() {
-      document.__tvTestPointerLock = this;
-      setTimeout(() => document.dispatchEvent(new Event('pointerlockchange')), 0);
-      return Promise.resolve();
-    }
-  });
-  Object.defineProperty(Document.prototype, 'exitPointerLock', {
-    configurable: true,
-    writable: true,
-    value: function exitPointerLock() {
-      this.__tvTestPointerLock = null;
-      setTimeout(() => this.dispatchEvent(new Event('pointerlockchange')), 0);
-    }
-  });
-});
-
 async function requireGamePointerLock(label) {
   await page.waitForFunction(() => window.ToonValley && document.pointerLockElement === window.ToonValley.renderer.domElement, null, { timeout: 6000 });
   if (!(await page.evaluate(() => document.pointerLockElement === window.ToonValley.renderer.domElement))) throw new Error(`${label}: game Pointer Lock was not active`);
@@ -75,6 +51,35 @@ try {
   await page.goto(remoteURL || 'http://127.0.0.1:4173', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.ToonValley && window.ToonValleyLife && window.ToonValleyPointerGuard && window.ToonValleyInteractionInputPreflight && window.ToonValleyUILayerFix, null, { timeout: 30000 });
   checkpoint('game globals ready');
+
+  // Shadow Pointer Lock only on this live document/canvas instance. Prototype-level
+  // replacement can deadlock Chromium's DevTools keyboard transport; these own
+  // properties model the same asynchronous browser lifecycle without touching the
+  // engine objects used by production code.
+  await page.evaluate(() => {
+    const TV = window.ToonValley;
+    document.__tvTestPointerLock = null;
+    Object.defineProperty(document, 'pointerLockElement', {
+      configurable: true,
+      get() { return document.__tvTestPointerLock || null; }
+    });
+    Object.defineProperty(TV.renderer.domElement, 'requestPointerLock', {
+      configurable: true,
+      value() {
+        document.__tvTestPointerLock = TV.renderer.domElement;
+        setTimeout(() => document.dispatchEvent(new Event('pointerlockchange')), 0);
+        return Promise.resolve();
+      }
+    });
+    Object.defineProperty(document, 'exitPointerLock', {
+      configurable: true,
+      value() {
+        document.__tvTestPointerLock = null;
+        setTimeout(() => document.dispatchEvent(new Event('pointerlockchange')), 0);
+      }
+    });
+  });
+
   await page.click('#play-button');
   await page.waitForFunction(() => window.ToonValley.state.started === true);
   await requireGamePointerLock('initial play');
@@ -104,19 +109,6 @@ try {
   checkpoint(`real prompt ready: ${npcTarget.prompt}`);
 
   await pressInteract();
-  await wait(300);
-  const keyDiag = await page.evaluate(() => ({
-    unlocks: window.ToonValleyInteractionInputPreflight.unlockCount(),
-    pending: window.ToonValleyInteractionInputPreflight.pending(),
-    ui: window.ToonValleyInteractionInputPreflight.uiOpenCount(),
-    relocks: window.ToonValleyInteractionInputPreflight.physicalRelockCount(),
-    nearest: window.ToonValleyInteractionInputPreflight.nearestInteraction()?.prompt || null,
-    pointerLocked: Boolean(document.pointerLockElement),
-    modalOpen: window.ToonValley.state.modalOpen,
-    overlay: Boolean(document.querySelector('.life-overlay')),
-    pauseHidden: document.getElementById('pause-screen').classList.contains('hidden')
-  }));
-  checkpoint(`post-E diagnostic ${JSON.stringify(keyDiag)}`);
   await requireReleasedForModal(npcTarget.prompt);
   checkpoint('real E-key NPC interaction opened popover without pause overlay');
   await closeResumeAndRequireGameplay(npcTarget.prompt);
