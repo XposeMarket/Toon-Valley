@@ -1,0 +1,24 @@
+name: Toon Valley Modal Fast Gate
+
+on:
+  push:
+    branches: [fix/popover-lifecycle-20260808]
+
+jobs:
+  modal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: |
+          node --check interaction-input-preflight.js
+          node --check pointer-capture-guard.js
+          node --check tests/modal-popover-runtime.mjs
+          node tests/service-worker-static.mjs
+      - run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - run: timeout 150s node tests/modal-popover-runtime.mjs
