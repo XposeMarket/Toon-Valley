@@ -8,7 +8,9 @@
   let pendingTimer = 0;
   let arms = 0;
   let keyups = 0;
+  let attempts = 0;
   let dispatches = 0;
+  let blurs = 0;
   let lastPrompt = null;
   let lastError = null;
   let lastDrop = null;
@@ -30,6 +32,7 @@
 
   function execute(interaction) {
     pendingTimer = 0;
+    attempts++;
     if (!stillValid(interaction)) return;
     dispatches++;
     lastPrompt = interaction.prompt || 'Interact';
@@ -63,28 +66,29 @@
     armedInteraction = null;
     event.preventDefault();
     event.stopImmediatePropagation();
-    // Never mutate modal or Pointer Lock state while the browser is dispatching a
-    // keyboard event. The next macrotask preserves the player gesture semantics
-    // while allowing modal actions to release Pointer Lock without re-entering the
-    // active key event. Physical interactions still flow through their existing
-    // action wrappers/gesture queue unchanged.
     clearTimeout(pendingTimer);
     pendingTimer = setTimeout(() => execute(interaction), 0);
   }, true);
 
+  // Losing window focus may happen around Pointer Lock transitions. It is safe to
+  // abandon an unfinished keydown, but an E gesture that already reached keyup has
+  // been accepted and must not have its queued interaction silently cancelled.
   window.addEventListener('blur', () => {
+    blurs++;
     armedInteraction = null;
-    if (pendingTimer) { clearTimeout(pendingTimer); pendingTimer = 0; }
   });
 
   window.ToonValleyDeferredInteractionDispatch = Object.freeze({
     active: true,
     executesAfterKeyboardEvent: true,
     preservesInteractionActions: true,
+    queuedActionsSurviveBlur: true,
     pending: () => Boolean(armedInteraction || pendingTimer),
     armCount: () => arms,
     keyupCount: () => keyups,
+    attemptCount: () => attempts,
     dispatchCount: () => dispatches,
+    blurCount: () => blurs,
     lastPrompt: () => lastPrompt,
     lastError: () => lastError,
     lastDrop: () => lastDrop
