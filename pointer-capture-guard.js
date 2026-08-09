@@ -25,7 +25,9 @@
   const pauseScreen = document.getElementById('pause-screen');
   let resumeAfterModal = false;
   let interactionUnlockPending = false;
+  let pendingModalAction = null;
   let unlockTimer = 0;
+  let observeTimer = 0;
   let modalUnlocksSuppressed = 0;
 
   const gamePointerLocked = () => Boolean(TV.renderer?.domElement && document.pointerLockElement === TV.renderer.domElement);
@@ -39,25 +41,48 @@
     queueMicrotask(hidePause);
   }
 
+  function releasePendingAction() {
+    const action = pendingModalAction;
+    pendingModalAction = null;
+    if (typeof action === 'function') setTimeout(action, 0);
+  }
+
   function completeObservedUnlock() {
     if (!interactionUnlockPending || gamePointerLocked()) return false;
     interactionUnlockPending = false;
+    clearTimeout(observeTimer);
+    observeTimer = 0;
     modalUnlocksSuppressed++;
     armResumeAfterModal();
     hidePause();
+    releasePendingAction();
     return true;
   }
 
-  function prepareModalInteraction() {
+  function observeUnlock(startedAt) {
+    if (completeObservedUnlock()) return;
+    if (!interactionUnlockPending) return;
+    if (performance.now() - startedAt > 1800) {
+      interactionUnlockPending = false;
+      pendingModalAction = null;
+      console.error('Toon Valley modal interaction Pointer Lock release timed out');
+      return;
+    }
+    observeTimer = setTimeout(() => observeUnlock(startedAt), 12);
+  }
+
+  function prepareModalInteraction(action) {
     if (TV.DEVICE.touch || !TV.state.started) return false;
+    pendingModalAction = typeof action === 'function' ? action : null;
     interactionUnlockPending = true;
     armResumeAfterModal();
     clearTimeout(unlockTimer);
+    clearTimeout(observeTimer);
     if (gamePointerLocked()) {
-      // Do not call exitPointerLock from inside the keyboard event dispatch. Some
-      // Chromium/WebGL combinations can stall the page when Pointer Lock exits
-      // synchronously from keyup. Release on the next task, then build UI only
-      // after the browser reports (or exposes) the unlocked state.
+      const startedAt = performance.now();
+      // Pointer Lock exit is deliberately outside the keyboard event stack. The
+      // action is released exactly once only after the browser exposes the
+      // unlocked state, via pointerlockchange or the state observer fallback.
       unlockTimer = setTimeout(() => {
         unlockTimer = 0;
         try {
@@ -65,12 +90,16 @@
           else completeObservedUnlock();
         } catch (error) {
           interactionUnlockPending = false;
+          pendingModalAction = null;
           console.error('Unable to release Pointer Lock before modal interaction', error);
+          return;
         }
+        observeTimer = setTimeout(() => observeUnlock(startedAt), 12);
       }, 0);
       return true;
     }
     interactionUnlockPending = false;
+    releasePendingAction();
     return false;
   }
 
@@ -111,12 +140,14 @@
     preflightModalUnlock: true,
     deferredPointerLockExit: true,
     observedUnlockFallback: true,
+    ownsModalActionHandoff: true,
     modalVisible: modalUIVisible,
     prepareModalInteraction,
     modalInteractionReady,
     armResumeAfterModal,
     resumePending: () => resumeAfterModal,
     interactionUnlockPending: () => interactionUnlockPending,
+    modalActionPending: () => Boolean(pendingModalAction),
     suppressedModalUnlocks: () => modalUnlocksSuppressed
   });
 
