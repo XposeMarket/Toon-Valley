@@ -33,7 +33,9 @@ async function diagnostics() {
       pending: window.ToonValleyDeferredInteractionDispatch.pending(),
       arms: window.ToonValleyDeferredInteractionDispatch.armCount(),
       keyups: window.ToonValleyDeferredInteractionDispatch.keyupCount(),
+      attempts: window.ToonValleyDeferredInteractionDispatch.attemptCount(),
       dispatches: window.ToonValleyDeferredInteractionDispatch.dispatchCount(),
+      blurs: window.ToonValleyDeferredInteractionDispatch.blurCount(),
       lastPrompt: window.ToonValleyDeferredInteractionDispatch.lastPrompt(),
       lastError: window.ToonValleyDeferredInteractionDispatch.lastError(),
       lastDrop: window.ToonValleyDeferredInteractionDispatch.lastDrop()
@@ -74,12 +76,18 @@ async function openNearestWithE(label) {
   const eventDuration = Date.now() - started;
   if (eventDuration > 1500) throw new Error(`${label}: keyboard event dispatch blocked for ${eventDuration}ms`);
 
-  await page.waitForFunction((previous) => window.ToonValleyDeferredInteractionDispatch.dispatchCount() > previous, before, { timeout: 3000 });
+  try {
+    await page.waitForFunction((previous) => window.ToonValleyDeferredInteractionDispatch.dispatchCount() > previous, before, { timeout: 3000 });
+  } catch (error) {
+    const state = await diagnostics();
+    console.log(`[modal-popover] ${label} deferred dispatch timeout`, state);
+    throw new Error(`${label}: deferred dispatch did not execute ${JSON.stringify(state)}\n${error.message}`);
+  }
   await page.waitForSelector('.life-overlay', { timeout: 3000 });
   await page.waitForFunction(() => !document.pointerLockElement && window.ToonValley.state.modalOpen === true, null, { timeout: 6000 });
   const state = await diagnostics();
   console.log(`[modal-popover] ${label} opened`, state);
-  if (!state.dispatcher || state.dispatcher.arms < 1 || state.dispatcher.keyups < 1 || state.dispatcher.dispatches <= before || state.dispatcher.lastError || state.dispatcher.lastDrop) {
+  if (!state.dispatcher || state.dispatcher.arms < 1 || state.dispatcher.keyups < 1 || state.dispatcher.attempts < 1 || state.dispatcher.dispatches <= before || state.dispatcher.lastError || state.dispatcher.lastDrop) {
     throw new Error(`${label}: deferred E dispatch regression ${JSON.stringify(state)}`);
   }
   if (!state.modalOpen || !state.overlay || !state.pauseHidden || state.pointerLocked || !state.modalVisible || !state.resumePending || state.suppressedUnlocks < 1) {
@@ -111,9 +119,10 @@ try {
     modalPauseSuppression: window.ToonValleyPointerGuard.modalPauseSuppression,
     explicitResumeAfterModal: window.ToonValleyPointerGuard.explicitResumeAfterModal,
     executesAfterKeyboardEvent: window.ToonValleyDeferredInteractionDispatch.executesAfterKeyboardEvent,
-    preservesInteractionActions: window.ToonValleyDeferredInteractionDispatch.preservesInteractionActions
+    preservesInteractionActions: window.ToonValleyDeferredInteractionDispatch.preservesInteractionActions,
+    queuedActionsSurviveBlur: window.ToonValleyDeferredInteractionDispatch.queuedActionsSurviveBlur
   }));
-  if (!capabilities.nativeModalExit || !capabilities.modalPauseSuppression || !capabilities.explicitResumeAfterModal || !capabilities.executesAfterKeyboardEvent || !capabilities.preservesInteractionActions) {
+  if (!capabilities.nativeModalExit || !capabilities.modalPauseSuppression || !capabilities.explicitResumeAfterModal || !capabilities.executesAfterKeyboardEvent || !capabilities.preservesInteractionActions || !capabilities.queuedActionsSurviveBlur) {
     throw new Error(`Missing modal/input capabilities ${JSON.stringify(capabilities)}`);
   }
 
