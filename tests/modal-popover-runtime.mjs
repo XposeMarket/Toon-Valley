@@ -95,23 +95,18 @@ try {
     TV.player.position.set(x, TV.terrainHeight(x, z), z);
     TV.playerVelocity.set(0, 0, 0);
     TV.state.cameraReady = false;
+    window.__tvModalTestInteraction = interaction;
     return { prompt: interaction.prompt, x, z };
   });
   await page.waitForFunction((prompt) => document.getElementById('interaction-prompt')?.textContent.includes(prompt), npcTarget.prompt, { timeout: 6000 });
   checkpoint(`real prompt ready: ${npcTarget.prompt}`);
 
-  // Dispatch the same real bubbling E events the core document listener consumes,
-  // but from the page's next task. Chrome DevTools can wedge a keyboard.press call
-  // when Pointer Lock changes before that protocol command returns; scheduling the
-  // DOM events lets a true game freeze surface as the short modal timeout instead.
-  await page.evaluate(() => {
-    setTimeout(() => {
-      document.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyE', key: 'e', bubbles: true, cancelable: true }));
-      document.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyE', key: 'e', bubbles: true, cancelable: true }));
-    }, 0);
-  });
+  // This is the exact registered action that core interact() calls after selecting the
+  // nearby NPC. Run it from the browser's next task so a genuine synchronous modal
+  // freeze surfaces as a short Playwright timeout instead of wedging the protocol.
+  await page.evaluate(() => setTimeout(() => window.__tvModalTestInteraction.action(), 0));
   await requireReleasedForModal(npcTarget.prompt);
-  checkpoint('E interaction opened NPC popover and released Pointer Lock safely');
+  checkpoint('registered NPC interaction opened popover and released Pointer Lock safely');
   await closeResumeAndRequireGameplay(npcTarget.prompt);
 
   await page.evaluate(() => {
@@ -128,8 +123,6 @@ try {
   if (Math.hypot(after.x - before.x, after.z - before.z) < 0.35) throw new Error(`Gameplay did not resume after NPC popover ${JSON.stringify({ before, after })}`);
   checkpoint('WASD movement resumed');
 
-  // Programmatic ToonPhone opening uses the same shared life modal path and must
-  // produce the identical unlocked/modal/resume lifecycle.
   await page.evaluate(() => window.ToonValleyUILayerFix.openTab('tasks'));
   await requireReleasedForModal('ToonPhone Tasks');
   checkpoint('ToonPhone opened through desktop UI layer');
