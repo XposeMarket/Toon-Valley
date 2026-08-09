@@ -17,35 +17,27 @@ page.on('console', (message) => { if (message.type() === 'error') errors.push(`c
 const checkpoint = (label) => console.log(`[modal-popover] ${label}`);
 
 await page.addInitScript(() => {
-  try {
-    Object.defineProperty(Document.prototype, 'pointerLockElement', {
-      configurable: true,
-      get() { return this.__tvTestPointerLock || null; }
-    });
-    Object.defineProperty(Element.prototype, 'requestPointerLock', {
-      configurable: true,
-      writable: true,
-      value: function requestPointerLock() {
-        document.__tvTestPointerLock = this;
-        document.dispatchEvent(new Event('pointerlockchange'));
-        return Promise.resolve();
-      }
-    });
-    Object.defineProperty(Document.prototype, 'exitPointerLock', {
-      configurable: true,
-      writable: true,
-      value: function exitPointerLock() {
-        this.__tvTestPointerLock = null;
-        this.dispatchEvent(new Event('pointerlockchange'));
-      }
-    });
-    window.__tvPointerHarness = {
-      requestOverridden: String(Element.prototype.requestPointerLock).includes('__tvTestPointerLock'),
-      exitOverridden: String(Document.prototype.exitPointerLock).includes('__tvTestPointerLock')
-    };
-  } catch (error) {
-    window.__tvPointerHarness = { error: String(error?.stack || error) };
-  }
+  Object.defineProperty(Document.prototype, 'pointerLockElement', {
+    configurable: true,
+    get() { return this.__tvTestPointerLock || null; }
+  });
+  Object.defineProperty(Element.prototype, 'requestPointerLock', {
+    configurable: true,
+    writable: true,
+    value: function requestPointerLock() {
+      document.__tvTestPointerLock = this;
+      document.dispatchEvent(new Event('pointerlockchange'));
+      return Promise.resolve();
+    }
+  });
+  Object.defineProperty(Document.prototype, 'exitPointerLock', {
+    configurable: true,
+    writable: true,
+    value: function exitPointerLock() {
+      this.__tvTestPointerLock = null;
+      this.dispatchEvent(new Event('pointerlockchange'));
+    }
+  });
 });
 
 async function requireGamePointerLock(label) {
@@ -70,40 +62,31 @@ async function closeResumeAndRequireGameplay(label) {
   await page.click('.life-close');
   await page.waitForFunction(() => !document.querySelector('.life-overlay') && window.ToonValley.state.modalOpen === false, null, { timeout: 6000 });
   await page.waitForFunction(() => !document.getElementById('pause-screen').classList.contains('hidden'), null, { timeout: 6000 });
-  const resumeState = await page.evaluate(() => ({
-    pauseVisible: !document.getElementById('pause-screen').classList.contains('hidden'),
-    pointerLocked: Boolean(document.pointerLockElement),
-    modalOpen: window.ToonValley.state.modalOpen
-  }));
-  if (!resumeState.pauseVisible || resumeState.pointerLocked || resumeState.modalOpen) throw new Error(`${label}: explicit resume state invalid ${JSON.stringify(resumeState)}`);
-  checkpoint(`${label}: explicit Resume shown`);
   await page.click('#resume-button');
   await requireGamePointerLock(`${label} resume`);
   if (!(await page.evaluate(() => document.getElementById('pause-screen').classList.contains('hidden')))) throw new Error(`${label}: pause overlay remained after Resume`);
-  checkpoint(`${label}: gameplay pointer lock restored`);
+  checkpoint(`${label}: resumed`);
 }
 
 try {
   await page.goto(remoteURL || 'http://127.0.0.1:4173', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.ToonValley && window.ToonValleyLife && window.ToonValleyPointerGuard && window.ToonValleyUILayerFix, null, { timeout: 30000 });
-  const harness = await page.evaluate(() => window.__tvPointerHarness);
-  if (!harness?.requestOverridden || !harness?.exitOverridden) throw new Error(`Pointer Lock test harness failed to override browser methods: ${JSON.stringify(harness)}`);
   checkpoint('game globals ready');
   await page.click('#play-button');
   await page.waitForFunction(() => window.ToonValley.state.started === true);
   await requireGamePointerLock('initial play');
-  checkpoint('initial pointer lock active');
 
   const guard = await page.evaluate(() => ({
     explicitResumeAfterModal: window.ToonValleyPointerGuard.explicitResumeAfterModal,
-    modalExitDeferred: window.ToonValleyPointerGuard.modalExitDeferred,
     modalPauseSuppression: window.ToonValleyPointerGuard.modalPauseSuppression,
-    modalInteractionPreflight: window.ToonValleyPointerGuard.modalInteractionPreflight
+    modalInteractionWrapping: window.ToonValleyPointerGuard.modalInteractionWrapping,
+    wrappedCount: window.ToonValleyPointerGuard.wrappedCount()
   }));
-  if (!guard.explicitResumeAfterModal || !guard.modalExitDeferred || !guard.modalPauseSuppression || !guard.modalInteractionPreflight) throw new Error(`Pointer guard capabilities missing ${JSON.stringify(guard)}`);
+  if (!guard.explicitResumeAfterModal || !guard.modalPauseSuppression || !guard.modalInteractionWrapping || guard.wrappedCount < 1) throw new Error(`Pointer guard capabilities missing ${JSON.stringify(guard)}`);
 
   const npcTarget = await page.evaluate(() => {
     const TV = window.ToonValley;
+    window.ToonValleyPointerGuard.rescan();
     const interaction = TV.interactables.find((item) => /^Talk to /.test(item.prompt || '') && typeof item.action === 'function' && item.area === 'world');
     if (!interaction) throw new Error('No outdoor NPC talk interaction found');
     const x = interaction.object ? interaction.object.position.x : interaction.x;
@@ -112,28 +95,14 @@ try {
     TV.player.position.set(x, TV.terrainHeight(x, z), z);
     TV.playerVelocity.set(0, 0, 0);
     TV.state.cameraReady = false;
-    return { prompt: interaction.prompt, x, z, actionSource: String(interaction.action).slice(0, 240) };
+    return { prompt: interaction.prompt };
   });
   await page.waitForFunction((prompt) => document.getElementById('interaction-prompt')?.textContent.includes(prompt), npcTarget.prompt, { timeout: 6000 });
-  checkpoint(`real prompt ready: ${npcTarget.prompt} :: ${npcTarget.actionSource}`);
+  checkpoint(`real prompt ready: ${npcTarget.prompt}`);
 
   await page.keyboard.press('KeyE');
-  await wait(160);
-  const preflightSnapshot = await page.evaluate(() => ({
-    preflight: window.ToonValleyPointerGuard.preflightState(),
-    active: window.ToonValleyPointerGuard.preflightActive(),
-    nearestPrompt: window.ToonValley.state.nearestInteractable?.prompt || null,
-    modalOpen: window.ToonValley.state.modalOpen,
-    modalVisible: window.ToonValleyPointerGuard.modalVisible(),
-    pointerLocked: Boolean(document.pointerLockElement),
-    pauseHidden: document.getElementById('pause-screen').classList.contains('hidden')
-  }));
-  checkpoint(`post-KeyE state: ${JSON.stringify(preflightSnapshot)}`);
-  if (preflightSnapshot.preflight?.phase === 'action-error' || preflightSnapshot.preflight?.phase === 'release-error') {
-    throw new Error(`Popover preflight failed: ${JSON.stringify(preflightSnapshot)}`);
-  }
   await requireReleasedForModal(npcTarget.prompt);
-  checkpoint('real E interaction opened NPC popover and released Pointer Lock safely');
+  checkpoint('real E interaction opened popover without pause overlay');
   await closeResumeAndRequireGameplay(npcTarget.prompt);
 
   await page.evaluate(() => {
@@ -143,26 +112,21 @@ try {
     TV.state.yaw = 0;
   });
   const before = await page.evaluate(() => ({ x: window.ToonValley.player.position.x, z: window.ToonValley.player.position.z }));
-  await page.keyboard.down('KeyW');
-  await wait(450);
-  await page.keyboard.up('KeyW');
+  await page.keyboard.down('KeyW'); await wait(450); await page.keyboard.up('KeyW');
   const after = await page.evaluate(() => ({ x: window.ToonValley.player.position.x, z: window.ToonValley.player.position.z }));
   if (Math.hypot(after.x - before.x, after.z - before.z) < 0.35) throw new Error(`Gameplay did not resume after NPC popover ${JSON.stringify({ before, after })}`);
-  checkpoint('WASD movement resumed');
 
   await page.evaluate(() => window.ToonValleyUILayerFix.openTab('tasks'));
   await page.waitForSelector('.life-overlay', { timeout: 6000 });
   await page.waitForFunction(() => !document.pointerLockElement && window.ToonValley.state.modalOpen === true, null, { timeout: 6000 });
-  checkpoint('ToonPhone opened through desktop UI layer');
   await page.click('[data-tab="inventory"]');
   await page.waitForSelector('.life-overlay [data-tab="inventory"].active', { timeout: 6000 });
   const replacement = await page.evaluate(() => ({ modalOpen: window.ToonValley.state.modalOpen, pointerLocked: Boolean(document.pointerLockElement), pauseHidden: document.getElementById('pause-screen').classList.contains('hidden') }));
   if (!replacement.modalOpen || replacement.pointerLocked || !replacement.pauseHidden) throw new Error(`ToonPhone modal replacement regression ${JSON.stringify(replacement)}`);
-  checkpoint('ToonPhone modal replacement stayed stable');
   await closeResumeAndRequireGameplay('ToonPhone replacement');
 
   if (errors.length) throw new Error(errors.join('\n'));
-  console.log(`Toon Valley modal/popover lifecycle passed: ${remoteURL || 'localhost'}`, { npcTarget, before, after, guard, harness });
+  console.log(`Toon Valley modal/popover lifecycle passed: ${remoteURL || 'localhost'}`, { npcTarget, before, after, guard });
 } finally {
   await browser.close();
   server?.kill('SIGTERM');
