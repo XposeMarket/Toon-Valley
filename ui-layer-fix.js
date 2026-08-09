@@ -24,15 +24,18 @@
 
   const modalSelector='.life-overlay,.mb-overlay,.ohx,#build-controls,#ohbuild,#bl-controls';
   const nativeRender=TV.renderer.render.bind(TV.renderer);
+  let modalTransition=false;
   let suppressedFrames=0;
+  const overlayVisible=()=>Boolean(document.querySelector(modalSelector));
+  function beginPopoverTransition(){modalTransition=true;}
+  function endPopoverTransition(){
+    // Keep the pre-composition freeze through the current task. On the next frame
+    // an established overlay is detected by selector; if no modal appeared, draws
+    // resume immediately instead of leaving the game frozen after an error/no-op.
+    requestAnimationFrame(()=>{modalTransition=false;});
+  }
   TV.renderer.render=function(scene,camera){
-    // Chromium and several integrated-GPU drivers can hard-stall when a fixed,
-    // translucent DOM popover is composited over a WebGL canvas that is redrawing
-    // every frame. Keep the canvas mounted with its last completed frame and pause
-    // only new GPU draws while a real UI overlay exists. Game state/update hooks
-    // continue running, and rendering resumes automatically as soon as it closes.
-    // Movie view intentionally has no selector match, so theater playback continues.
-    if(TV.state.modalOpen&&document.querySelector(modalSelector)){
+    if(modalTransition||(TV.state.modalOpen&&overlayVisible())){
       suppressedFrames++;
       return;
     }
@@ -56,7 +59,10 @@
     clearTimeout(releaseTimer);
     if(TV.state.modalOpen&&!document.querySelector('.life-overlay,.mb-overlay,.ohx'))TV.setModalOpen(false);
     document.getElementById('pause-screen')?.classList.add('hidden');
-    requestAnimationFrame(()=>Life.openPhone(tab));
+    beginPopoverTransition();
+    requestAnimationFrame(()=>{
+      try{Life.openPhone(tab);}finally{endPopoverTransition();}
+    });
   }
   function finishRelease(){
     if(!pendingTab||document.pointerLockElement)return;
@@ -73,6 +79,7 @@
     if(TV.state.modalOpen)return;
     if(document.pointerLockElement){
       pendingTab=tab;
+      beginPopoverTransition();
       TV.setModalOpen(true);
       document.getElementById('pause-screen')?.classList.add('hidden');
       document.exitPointerLock?.();
@@ -106,7 +113,11 @@
     desktopDock:true,
     gpuSafePopoverCompositing:true,
     freezesWebGLDrawsUnderModal:true,
+    prefreezesBeforeModalConstruction:true,
     canvasRemainsMounted:true,
+    beginPopoverTransition,
+    endPopoverTransition,
+    transitionPending:()=>modalTransition,
     suppressedFrames:()=>suppressedFrames,
     openTab
   });
