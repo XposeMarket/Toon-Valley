@@ -5,6 +5,7 @@ import process from 'node:process';
 const remoteURL = process.env.BASE_URL?.replace(/\/$/, '');
 const server = remoteURL ? null : spawn('python3', ['-m', 'http.server', '4173', '--bind', '127.0.0.1'], { stdio: ['ignore', 'pipe', 'pipe'] });
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const deadline = (ms, message) => wait(ms).then(() => { throw new Error(message); });
 if (server) await wait(900);
 
 const browser = await chromium.launch({ headless: true, args: ['--use-gl=swiftshader', '--enable-webgl'] });
@@ -42,7 +43,10 @@ async function modalDiagnostics() {
 
 async function requireReleasedForModal(label) {
   try {
-    await page.waitForSelector('.life-overlay', { timeout: 6000 });
+    await Promise.race([
+      page.waitForSelector('.life-overlay', { timeout: 6000 }),
+      deadline(7000, `${label}: manual modal-open deadline exceeded`)
+    ]);
   } catch (error) {
     console.error(`[modal-popover] ${label} failed to open`, await modalDiagnostics());
     throw error;
@@ -85,9 +89,10 @@ try {
     explicitResumeAfterModal: window.ToonValleyPointerGuard.explicitResumeAfterModal,
     modalPauseSuppression: window.ToonValleyPointerGuard.modalPauseSuppression,
     nativeModalLifecycle: window.ToonValleyPointerGuard.nativeModalLifecycle,
-    preflightActive: window.ToonValleyInteractionInputPreflight.active
+    preflightActive: window.ToonValleyInteractionInputPreflight.active,
+    deferredPointerRelease: window.ToonValleyInteractionInputPreflight.deferredPointerRelease
   }));
-  if (!guard.explicitResumeAfterModal || !guard.modalPauseSuppression || !guard.nativeModalLifecycle || !guard.preflightActive) throw new Error(`Pointer guard capabilities missing ${JSON.stringify(guard)}`);
+  if (!guard.explicitResumeAfterModal || !guard.modalPauseSuppression || !guard.nativeModalLifecycle || !guard.preflightActive || !guard.deferredPointerRelease) throw new Error(`Pointer guard capabilities missing ${JSON.stringify(guard)}`);
 
   const modalTarget = await page.evaluate(() => {
     const TV = window.ToonValley;
@@ -100,7 +105,11 @@ try {
   });
   if (modalTarget.area !== 'home') throw new Error(`Failed to enter home for modal test: ${JSON.stringify(modalTarget)}`);
   await page.waitForFunction((prompt) => window.ToonValley.state.nearestInteractable?.prompt === prompt, modalTarget.prompt, { timeout: 6000 });
-  await page.keyboard.press('KeyE');
+  await Promise.race([
+    page.keyboard.press('KeyE'),
+    deadline(3000, 'KeyE input dispatch hung while opening modal')
+  ]);
+  checkpoint('KeyE dispatch completed');
   await requireReleasedForModal(modalTarget.prompt);
   checkpoint('home decorating popover opened after real E input');
   await closeResume(modalTarget.prompt);
@@ -111,7 +120,10 @@ try {
   if (Math.hypot(after.x - before.x, after.z - before.z) < 0.25) throw new Error(`Gameplay did not resume after popover ${JSON.stringify({ before, after })}`);
   checkpoint('WASD movement resumed');
 
-  await page.keyboard.press('KeyT');
+  await Promise.race([
+    page.keyboard.press('KeyT'),
+    deadline(3000, 'KeyT input dispatch hung while opening ToonPhone')
+  ]);
   await page.waitForSelector('.life-overlay', { timeout: 6000 });
   await page.waitForFunction(() => !document.pointerLockElement && window.ToonValley.state.modalOpen === true, null, { timeout: 6000 });
   await page.click('[data-tab="inventory"]');
