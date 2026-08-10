@@ -1,0 +1,40 @@
+name: Mountain Trail Life Regression
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: toon-valley-mountain-trail-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-mountain-trail-life:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax and static checks
+        run: |
+          node --check community-state-safety.js
+          node --check valley-community-life.js
+          node --check community-objectives.js
+          node --check mountain-trail-life.js
+          node --check tests/mountain-trail-life-runtime.mjs
+          node tests/community-life-static.mjs
+          node tests/valley-expansion-static.mjs
+      - name: Install browser runtime
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Local Mountain Trail gameplay
+        run: timeout 150s node tests/mountain-trail-life-runtime.mjs
+      - name: Production Mountain Trail gameplay
+        if: github.event_name == 'push'
+        env:
+          BASE_URL: https://toon-valley.vercel.app
+        run: timeout 150s node tests/mountain-trail-life-runtime.mjs
