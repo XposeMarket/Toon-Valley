@@ -21,15 +21,21 @@ jobs:
       - name: Syntax checks
         run: |
           node --check ambient-pedestrian-life.js
+          node --check ambient-world-details.js
           node --check tests/ambient-pedestrian-runtime.mjs
+          node --check tests/ambient-world-details-runtime.mjs
       - name: Install browser runtime
         run: |
           npm install --no-save playwright@1.55.0
           npx playwright install --with-deps chromium
       - name: Local ambient pedestrian runtime
-        run: timeout 150s node tests/ambient-pedestrian-runtime.mjs
+        run: |
+          timeout 150s node tests/ambient-pedestrian-runtime.mjs
+          timeout 150s node tests/ambient-world-details-runtime.mjs
       - name: Production ambient pedestrian runtime
         if: github.event_name == 'push'
         env:
           BASE_URL: https://toon-valley.vercel.app
-        run: timeout 150s node tests/ambient-pedestrian-runtime.mjs
+        run: |
+          timeout 150s node tests/ambient-pedestrian-runtime.mjs
+          timeout 150s node tests/ambient-world-details-runtime.mjs
