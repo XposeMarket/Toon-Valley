@@ -23,7 +23,7 @@ try{
     board.action();await until(()=>R.getState().stage===1,'acceptance');const accepted={state:R.getState(),visual:R.getVisualState()};
     if(!enabled(pickup))throw new Error('Pickup did not enable after acceptance');pickup.action();await until(()=>R.getState().stage===2,'physical pickup');const loaded={state:R.getState(),visual:R.getVisualState()};
     if(!enabled(delivery))throw new Error('Delivery did not enable with cargo');delivery.action();await until(()=>R.getState().stage===3,'delivery handoff');const returning={state:R.getState(),visual:R.getVisualState()};
-    board.action();await until(()=>R.getState().completed&&R.getState().stage===4,'final sign-off');const complete={state:R.getState(),visual:R.getVisualState()};
+    R.handleNoticeBoard();await until(()=>R.getState().completed&&R.getState().stage===4,'final sign-off');const complete={state:R.getState(),visual:R.getVisualState()};
     const duplicatePrompts=/^(Collect returned books from Cal|Collect seed packet from Nina|Collect fire-station supplies from Cal|Hand book bundle to Mabel|Deliver seed packet to community garden|Hand supplies to Sam)$/;
     const duplicateEnabled=TV.interactables.filter(i=>duplicatePrompts.test(i.prompt||'')).some(i=>!i.enabled||i.enabled());
     return{initial,accepted,loaded,returning,complete,bridge:Bridge,physicalFeedback:R.physicalFeedback,duplicateEnabled};
