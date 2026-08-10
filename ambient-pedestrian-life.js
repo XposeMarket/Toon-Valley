@@ -46,6 +46,19 @@
     return parcel;
   }
 
+  function makeBottle(group, index) {
+    const bottle = new THREE.Group();
+    bottle.name = 'jogger-water-bottle';
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(.075, .085, .34, 8), new THREE.MeshToonMaterial({ color: index % 2 ? 0x7ed8ff : 0x86e2b0 }));
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(.055, .055, .07, 8), new THREE.MeshToonMaterial({ color: 0xf7f7f2 }));
+    cap.position.y = .205;
+    bottle.add(body, cap);
+    bottle.position.set(.3, 1.05, .13);
+    bottle.rotation.set(.05, 0, -.18);
+    group.add(bottle);
+    return bottle;
+  }
+
   const squareRoutes = [
     [{ x: 1.5, z: -10.5, activity: 'crosswalk' }, { x: 1.5, z: -3.5, activity: 'storefront' }, { x: 10.5, z: -3.5, activity: 'crosswalk' }, { x: 10.5, z: -10.5, activity: 'plaza-look' }],
     [{ x: 3.5, z: -12, activity: 'storefront' }, { x: 9, z: -12, activity: 'crosswalk' }, { x: 12, z: -7, activity: 'plaza-look' }, { x: 7, z: -2.5, activity: 'storefront' }, { x: 2.5, z: -6, activity: 'crosswalk' }],
@@ -63,7 +76,8 @@
     stretch: 1.05,
     bench: 1.8,
     viewpoint: 1.35,
-    greeting: 1.25
+    greeting: 1.25,
+    socializing: 1.55
   });
 
   function greetingText(walker) {
@@ -80,6 +94,7 @@
     walker.playerYield = 0;
     walker.pause = Math.max(walker.pause, activityDurations.greeting);
     walker.activity = 'greeting';
+    walker.socialPartner = null;
     const player = TV.player?.position;
     if (player) walker.group.rotation.y = Math.atan2(player.x - walker.group.position.x, player.z - walker.group.position.z);
     TV.showToast?.(`👋 ${greetingText(walker)}`, 2.4);
@@ -109,10 +124,15 @@
       yieldCount: 0,
       greetingCount: 0,
       greetingCooldown: 0,
+      socialCount: 0,
+      socialCooldown: 1.5 + index * .35,
+      socialPartner: null,
       parcel: runner ? null : makeParcel(g),
       hasParcel: false,
       parcelPickups: 0,
-      parcelDeliveries: 0
+      parcelDeliveries: 0,
+      bottle: runner ? makeBottle(g, index) : null,
+      hydrationBreaks: 0
     };
     walkers.push(state);
     TV.registerInteraction({
@@ -135,16 +155,40 @@
   }
 
   function handleArrivalActivity(walker, activity) {
-    if (walker.kind !== 'square-errand' || !walker.parcel) return;
-    if (activity === 'storefront' && !walker.hasParcel) {
-      walker.hasParcel = true;
-      walker.parcel.visible = true;
-      walker.parcelPickups += 1;
-    } else if (activity === 'plaza-look' && walker.hasParcel) {
-      walker.hasParcel = false;
-      walker.parcel.visible = false;
-      walker.parcelDeliveries += 1;
+    if (walker.kind === 'square-errand' && walker.parcel) {
+      if (activity === 'storefront' && !walker.hasParcel) {
+        walker.hasParcel = true;
+        walker.parcel.visible = true;
+        walker.parcelPickups += 1;
+      } else if (activity === 'plaza-look' && walker.hasParcel) {
+        walker.hasParcel = false;
+        walker.parcel.visible = false;
+        walker.parcelDeliveries += 1;
+      }
     }
+    if (walker.kind === 'park-jogger' && walker.bottle && activity === 'bench') walker.hydrationBreaks += 1;
+  }
+
+  function beginSocialEncounter(firstOrIndex, secondOrIndex) {
+    const first = typeof firstOrIndex === 'number' ? walkers[firstOrIndex] : firstOrIndex;
+    const second = typeof secondOrIndex === 'number' ? walkers[secondOrIndex] : secondOrIndex;
+    if (!first || !second || first === second || first.socialCooldown > 0 || second.socialCooldown > 0) return false;
+    if (first.greetingCooldown > 0 || second.greetingCooldown > 0 || first.playerYield > 0 || second.playerYield > 0) return false;
+    first.socialCount += 1;
+    second.socialCount += 1;
+    first.socialCooldown = 7.5;
+    second.socialCooldown = 7.5;
+    first.socialPartner = second.displayName;
+    second.socialPartner = first.displayName;
+    first.pause = Math.max(first.pause, activityDurations.socializing);
+    second.pause = Math.max(second.pause, activityDurations.socializing);
+    first.activity = 'socializing';
+    second.activity = 'socializing';
+    const dx = second.group.position.x - first.group.position.x;
+    const dz = second.group.position.z - first.group.position.z;
+    first.group.rotation.y = Math.atan2(dx, dz);
+    second.group.rotation.y = Math.atan2(-dx, -dz);
+    return true;
   }
 
   function applyIdlePose(walker) {
@@ -162,10 +206,23 @@
       if (body) body.rotation.z = Math.sin(elapsed * 3.6 + walker.bob) * .08;
     } else if (activity === 'bench') {
       group.position.y -= .08;
+      if (walker.bottle) {
+        walker.bottle.position.set(.18, 1.43, .08);
+        walker.bottle.rotation.set(-.45, 0, -.42);
+      }
     } else if (activity === 'greeting') {
       if (head) head.rotation.y = Math.sin(elapsed * 2.6 + walker.bob) * .12;
+    } else if (activity === 'socializing') {
+      if (head) head.rotation.y = Math.sin(elapsed * 3.2 + walker.bob) * .1;
+      if (body) body.rotation.z = Math.sin(elapsed * 2.4 + walker.bob) * .025;
     }
     if (walker.hasParcel && walker.parcel) walker.parcel.rotation.z = -.08 + Math.sin(elapsed * 4 + walker.bob) * .025;
+  }
+
+  function resetCarriedPose(walker) {
+    if (!walker.bottle || walker.activity === 'bench') return;
+    walker.bottle.position.set(.3, 1.05, .13);
+    walker.bottle.rotation.set(.05, 0, -.18);
   }
 
   function shouldYieldToPlayer(walker) {
@@ -179,6 +236,8 @@
   function moveWalker(walker, dt) {
     walker.yieldCooldown = Math.max(0, walker.yieldCooldown - dt);
     walker.greetingCooldown = Math.max(0, walker.greetingCooldown - dt);
+    walker.socialCooldown = Math.max(0, walker.socialCooldown - dt);
+    resetCarriedPose(walker);
     if (shouldYieldToPlayer(walker)) {
       walker.playerYield = .72;
       walker.yieldCooldown = 1.45;
@@ -195,7 +254,11 @@
       walker.pause = Math.max(0, walker.pause - dt);
       walker.group.position.y = TV.terrainHeight(walker.group.position.x, walker.group.position.z) + Math.sin(elapsed * 2 + walker.bob) * .012;
       applyIdlePose(walker);
-      if (walker.pause === 0) walker.activity = null;
+      if (walker.pause === 0) {
+        walker.activity = null;
+        walker.socialPartner = null;
+        resetCarriedPose(walker);
+      }
       return;
     }
     const target = walker.route[walker.cursor];
@@ -223,10 +286,26 @@
     if (walker.hasParcel && walker.parcel) walker.parcel.rotation.z = -.08 + Math.sin(elapsed * 5 + walker.bob) * .018;
   }
 
+  function maybeStartSocialEncounter() {
+    for (let i = 0; i < walkers.length; i += 1) {
+      const first = walkers[i];
+      if (first.pause > 0 || first.playerYield > 0 || first.socialCooldown > 0) continue;
+      for (let j = i + 1; j < walkers.length; j += 1) {
+        const second = walkers[j];
+        if (second.pause > 0 || second.playerYield > 0 || second.socialCooldown > 0) continue;
+        const dx = second.group.position.x - first.group.position.x;
+        const dz = second.group.position.z - first.group.position.z;
+        if (dx * dx + dz * dz <= 1.35 * 1.35 && beginSocialEncounter(first, second)) return true;
+      }
+    }
+    return false;
+  }
+
   function advance(dt = 0) {
     const safeDt = Math.max(0, Math.min(.25, Number(dt) || 0));
     elapsed += safeDt;
     walkers.forEach(walker => moveWalker(walker, safeDt));
+    maybeStartSocialEncounter();
   }
 
   TV.registerUpdateHook(advance);
@@ -247,10 +326,15 @@
       yieldCount: walker.yieldCount,
       greetingCount: walker.greetingCount,
       greetingCooldown: walker.greetingCooldown,
+      socialCount: walker.socialCount,
+      socialCooldown: walker.socialCooldown,
+      socialPartner: walker.socialPartner,
       hasParcel: walker.hasParcel,
       parcelVisible: Boolean(walker.parcel?.visible),
       parcelPickups: walker.parcelPickups,
       parcelDeliveries: walker.parcelDeliveries,
+      bottleVisible: Boolean(walker.bottle?.visible),
+      hydrationBreaks: walker.hydrationBreaks,
       completedSegments: walker.completedSegments,
       routePoints: walker.route.length,
       destinationActivities: walker.route.filter(point => point.activity).length
@@ -267,11 +351,14 @@
     playerAwareYielding: true,
     physicalErrandParcels: true,
     playerGreetings: true,
+    neighborSocialEncounters: true,
+    joggerHydration: true,
     walkerCount: walkers.length,
     squareWalkerCount: squareRoutes.length,
     parkJoggerCount: parkRoutes.length,
     getState,
     greet: greetWalker,
+    socialize: beginSocialEncounter,
     advance
   });
 })();
