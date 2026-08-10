@@ -26,20 +26,34 @@ try{
     const first=moved.hikers[0];
     TV.player.position.x=first.x+.5;TV.player.position.z=first.z+.5;
     M.advance(.08);const yielded=M.getState();
+    const distanceAtYield=yielded.hikers[0].distance;
+    for(let i=0;i<42;i++){
+      const h=M.getState().hikers[0];
+      TV.player.position.x=h.x+.45;TV.player.position.z=h.z+.45;
+      M.advance(.08);
+    }
+    const passed=M.getState();
+    TV.player.position.set(0,TV.terrainHeight(0,0),0);
+    for(let i=0;i<1100;i++)M.advance(.05);
+    const activities=M.getState();
     TV.player.position.set(-107,TV.terrainHeight(-107,46),46);
     C.handleTrailGate();M.advance(.08);const active=M.getState();
     for(let i=0;i<C.trail.length;i++)C.visitTrail(i);
     M.advance(.08);const signoff=M.getState();
     C.handleTrailGate();M.advance(.08);const complete=M.getState();
-    return{repaired:S.repaired,parseFailed:S.parseFailed,safety,initialCommunity,before,moved,yielded,active,signoff,complete};
+    return{repaired:S.repaired,parseFailed:S.parseFailed,safety,initialCommunity,before,moved,yielded,distanceAtYield,passed,activities,active,signoff,complete};
   });
   if(!report.repaired||report.parseFailed)throw new Error(`Stale community save was not safely normalized ${JSON.stringify(report.safety)}`);
   if(report.before.hikerCount!==2||report.before.pathPoints<10)throw new Error(`Bounded trail hiker population missing ${JSON.stringify(report.before)}`);
   if(!report.moved.hikers.every(h=>h.distance>0&&h.terrainError<.08&&Number.isFinite(h.x)&&Number.isFinite(h.z)))throw new Error(`Hikers did not traverse terrain safely ${JSON.stringify(report.moved)}`);
   if(report.yielded.totalYieldEvents<1||!report.yielded.hikers.some(h=>h.yielding>0))throw new Error(`Hikers did not yield to the player ${JSON.stringify(report.yielded)}`);
+  if(report.passed.totalPassingEvents<1||report.passed.hikers[0].passingEvents<1||report.passed.hikers[0].distance<=report.distanceAtYield+.15)throw new Error(`Blocked hiker did not physically pass around the player ${JSON.stringify(report.passed)}`);
+  if(report.passed.hikers[0].yieldEvents>2)throw new Error(`Yield cooldown regressed into repeated freeze loop ${JSON.stringify(report.passed.hikers[0])}`);
+  if(report.activities.totalLandmarkActivities<3||!report.activities.hikers.every(h=>h.activityEvents>0))throw new Error(`Contextual trail landmark activities did not run ${JSON.stringify(report.activities)}`);
+  if(!report.activities.hikers.every(h=>h.terrainError<.08&&Number.isFinite(h.x)&&Number.isFinite(h.z)))throw new Error(`Trail activity movement escaped terrain ${JSON.stringify(report.activities)}`);
   if(report.active.ranger.mode!=='card-active'||!report.active.ranger.clipboardVisible||report.active.ranger.stampVisible)throw new Error(`Ranger did not react to trail acceptance ${JSON.stringify(report.active.ranger)}`);
   if(report.signoff.ranger.mode!=='signoff-ready'||!report.signoff.ranger.clipboardVisible||!report.signoff.ranger.stampVisible||report.signoff.ranger.signoffGestures<1)throw new Error(`Ranger sign-off response missing ${JSON.stringify(report.signoff.ranger)}`);
   if(report.complete.ranger.mode!=='complete'||report.complete.ranger.clipboardVisible||report.complete.ranger.stampVisible)throw new Error(`Ranger did not settle after sign-off ${JSON.stringify(report.complete.ranger)}`);
   if(errors.length)throw new Error(errors.join('\n'));
-  console.log('Mountain Trail living hikers ranger response and save-safety checks passed',report);
+  console.log('Mountain Trail passing landmark activity ranger response and save-safety checks passed',report);
 }finally{await browser.close();if(server)server.kill('SIGTERM')}
