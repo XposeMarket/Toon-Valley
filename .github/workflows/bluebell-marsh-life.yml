@@ -1,0 +1,35 @@
+name: Bluebell Marsh Life
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: bluebell-marsh-life-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax checks
+        run: |
+          node --check bluebell-marsh-life.js
+          node --check tests/bluebell-marsh-life-runtime.mjs
+      - name: Install browser runtime
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Local Bluebell marsh runtime
+        run: timeout 150s node tests/bluebell-marsh-life-runtime.mjs
+      - name: Production Bluebell marsh runtime
+        if: github.event_name == 'push'
+        env:
+          BASE_URL: https://toon-valley.vercel.app
+        run: timeout 150s node tests/bluebell-marsh-life-runtime.mjs
