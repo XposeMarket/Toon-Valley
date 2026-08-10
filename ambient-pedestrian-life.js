@@ -9,6 +9,7 @@
 
   const palette = [0xf07b68, 0x6b8ff5, 0x6bc58a, 0xb57be8, 0xf0b85f];
   const walkers = [];
+  const names = ['Pip', 'Mina', 'Theo', 'June', 'Rory'];
   let elapsed = 0;
 
   function makePerson(name, color, scale = 1) {
@@ -32,6 +33,19 @@
     return g;
   }
 
+  function makeParcel(group) {
+    const parcel = new THREE.Group();
+    parcel.name = 'errand-parcel';
+    const box = new THREE.Mesh(new THREE.BoxGeometry(.34, .25, .28), new THREE.MeshToonMaterial({ color: 0xd79a55 }));
+    const band = new THREE.Mesh(new THREE.BoxGeometry(.08, .27, .3), new THREE.MeshToonMaterial({ color: 0xf6dd87 }));
+    parcel.add(box, band);
+    parcel.position.set(.35, 1.08, .18);
+    parcel.rotation.set(-.12, -.22, -.08);
+    parcel.visible = false;
+    group.add(parcel);
+    return parcel;
+  }
+
   const squareRoutes = [
     [{ x: 1.5, z: -10.5, activity: 'crosswalk' }, { x: 1.5, z: -3.5, activity: 'storefront' }, { x: 10.5, z: -3.5, activity: 'crosswalk' }, { x: 10.5, z: -10.5, activity: 'plaza-look' }],
     [{ x: 3.5, z: -12, activity: 'storefront' }, { x: 9, z: -12, activity: 'crosswalk' }, { x: 12, z: -7, activity: 'plaza-look' }, { x: 7, z: -2.5, activity: 'storefront' }, { x: 2.5, z: -6, activity: 'crosswalk' }],
@@ -48,16 +62,39 @@
     'plaza-look': 1.6,
     stretch: 1.05,
     bench: 1.8,
-    viewpoint: 1.35
+    viewpoint: 1.35,
+    greeting: 1.25
   });
+
+  function greetingText(walker) {
+    if (walker.kind === 'park-jogger') return walker.activity === 'bench' ? `${walker.displayName}: “Perfect bench break. The park loop is beautiful today.”` : `${walker.displayName}: “Hey! I’m doing one more lap around Sunshine Park.”`;
+    if (walker.hasParcel) return `${walker.displayName}: “Hi! I’m carrying this parcel across the square before my next stop.”`;
+    return `${walker.displayName}: “Hey there! I’m making the rounds through Town Square.”`;
+  }
+
+  function greetWalker(walkerOrIndex) {
+    const walker = typeof walkerOrIndex === 'number' ? walkers[walkerOrIndex] : walkerOrIndex;
+    if (!walker || walker.greetingCooldown > 0) return false;
+    walker.greetingCount += 1;
+    walker.greetingCooldown = 1.5;
+    walker.playerYield = 0;
+    walker.pause = Math.max(walker.pause, activityDurations.greeting);
+    walker.activity = 'greeting';
+    const player = TV.player?.position;
+    if (player) walker.group.rotation.y = Math.atan2(player.x - walker.group.position.x, player.z - walker.group.position.z);
+    TV.showToast?.(`👋 ${greetingText(walker)}`, 2.4);
+    return true;
+  }
 
   function addWalker(kind, route, index) {
     const runner = kind === 'park-jogger';
+    const offset = runner ? squareRoutes.length : 0;
     const g = makePerson(`${kind}-${index + 1}`, palette[(index + (runner ? 3 : 0)) % palette.length], runner ? .96 : 1);
     const start = route[index % route.length];
     g.position.set(start.x, TV.terrainHeight(start.x, start.z), start.z);
     const state = {
       kind,
+      displayName: names[offset + index] || `Valley Neighbor ${offset + index + 1}`,
       group: g,
       route,
       cursor: (index + 1) % route.length,
@@ -69,9 +106,23 @@
       bob: index * 1.7,
       playerYield: 0,
       yieldCooldown: 0,
-      yieldCount: 0
+      yieldCount: 0,
+      greetingCount: 0,
+      greetingCooldown: 0,
+      parcel: runner ? null : makeParcel(g),
+      hasParcel: false,
+      parcelPickups: 0,
+      parcelDeliveries: 0
     };
     walkers.push(state);
+    TV.registerInteraction({
+      object: g,
+      radius: 2.3,
+      area: 'world',
+      prompt: `Greet ${state.displayName}`,
+      enabled: () => state.greetingCooldown <= 0,
+      action: () => greetWalker(state)
+    });
     return state;
   }
 
@@ -81,6 +132,19 @@
   function activityDuration(activity, walker) {
     const base = activityDurations[activity] || (walker.kind === 'square-errand' ? 1.15 : .18);
     return base + (walker.activityCount % 2) * .2;
+  }
+
+  function handleArrivalActivity(walker, activity) {
+    if (walker.kind !== 'square-errand' || !walker.parcel) return;
+    if (activity === 'storefront' && !walker.hasParcel) {
+      walker.hasParcel = true;
+      walker.parcel.visible = true;
+      walker.parcelPickups += 1;
+    } else if (activity === 'plaza-look' && walker.hasParcel) {
+      walker.hasParcel = false;
+      walker.parcel.visible = false;
+      walker.parcelDeliveries += 1;
+    }
   }
 
   function applyIdlePose(walker) {
@@ -98,7 +162,10 @@
       if (body) body.rotation.z = Math.sin(elapsed * 3.6 + walker.bob) * .08;
     } else if (activity === 'bench') {
       group.position.y -= .08;
+    } else if (activity === 'greeting') {
+      if (head) head.rotation.y = Math.sin(elapsed * 2.6 + walker.bob) * .12;
     }
+    if (walker.hasParcel && walker.parcel) walker.parcel.rotation.z = -.08 + Math.sin(elapsed * 4 + walker.bob) * .025;
   }
 
   function shouldYieldToPlayer(walker) {
@@ -111,6 +178,7 @@
 
   function moveWalker(walker, dt) {
     walker.yieldCooldown = Math.max(0, walker.yieldCooldown - dt);
+    walker.greetingCooldown = Math.max(0, walker.greetingCooldown - dt);
     if (shouldYieldToPlayer(walker)) {
       walker.playerYield = .72;
       walker.yieldCooldown = 1.45;
@@ -140,6 +208,7 @@
       walker.group.position.y = TV.terrainHeight(target.x, target.z);
       walker.activity = target.activity || null;
       walker.activityCount += walker.activity ? 1 : 0;
+      handleArrivalActivity(walker, walker.activity);
       walker.cursor = (walker.cursor + 1) % walker.route.length;
       walker.completedSegments += 1;
       walker.pause = activityDuration(walker.activity, walker);
@@ -151,6 +220,7 @@
     walker.group.position.y = TV.terrainHeight(walker.group.position.x, walker.group.position.z);
     walker.group.rotation.y = Math.atan2(dx, dz);
     walker.group.position.y += Math.sin(elapsed * (walker.kind === 'park-jogger' ? 8 : 5) + walker.bob) * .02;
+    if (walker.hasParcel && walker.parcel) walker.parcel.rotation.z = -.08 + Math.sin(elapsed * 5 + walker.bob) * .018;
   }
 
   function advance(dt = 0) {
@@ -164,6 +234,7 @@
   function getState() {
     return walkers.map(walker => ({
       name: walker.group.name,
+      displayName: walker.displayName,
       kind: walker.kind,
       x: walker.group.position.x,
       z: walker.group.position.z,
@@ -174,6 +245,12 @@
       activityCount: walker.activityCount,
       playerYield: walker.playerYield,
       yieldCount: walker.yieldCount,
+      greetingCount: walker.greetingCount,
+      greetingCooldown: walker.greetingCooldown,
+      hasParcel: walker.hasParcel,
+      parcelVisible: Boolean(walker.parcel?.visible),
+      parcelPickups: walker.parcelPickups,
+      parcelDeliveries: walker.parcelDeliveries,
       completedSegments: walker.completedSegments,
       routePoints: walker.route.length,
       destinationActivities: walker.route.filter(point => point.activity).length
@@ -188,10 +265,13 @@
     routePauses: true,
     contextualDestinationActivities: true,
     playerAwareYielding: true,
+    physicalErrandParcels: true,
+    playerGreetings: true,
     walkerCount: walkers.length,
     squareWalkerCount: squareRoutes.length,
     parkJoggerCount: parkRoutes.length,
     getState,
+    greet: greetWalker,
     advance
   });
 })();
