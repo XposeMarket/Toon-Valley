@@ -14,30 +14,46 @@ try{
   await page.click('#play-button');await wait(180);
   const report=await page.evaluate(()=>{
     const A=window.ToonValleyAmbientPedestrianLife;
+    const TV=window.ToonValley;
     const before=A.getState();
     for(let i=0;i<80;i++)A.advance(.25);
-    const after=A.getState();
+    const afterTravel=A.getState();
+    const target=afterTravel[0];
+    TV.player.position.x=target.x;
+    TV.player.position.z=target.z;
+    A.advance(.1);
+    const afterYield=A.getState();
+    TV.player.position.x=220;
+    TV.player.position.z=220;
+    for(let i=0;i<120;i++)A.advance(.25);
+    const afterActivities=A.getState();
     return {
       active:A.active,
       townSquareErrands:A.townSquareErrands,
       sunshineParkJoggers:A.sunshineParkJoggers,
       terrainFollowing:A.terrainFollowing,
       routePauses:A.routePauses,
+      contextualDestinationActivities:A.contextualDestinationActivities,
+      playerAwareYielding:A.playerAwareYielding,
       walkerCount:A.walkerCount,
       squareWalkerCount:A.squareWalkerCount,
       parkJoggerCount:A.parkJoggerCount,
       before,
-      after,
-      rootPresent:Boolean(window.ToonValley.scene.getObjectByName('ambient-pedestrian-life'))
+      afterTravel,
+      afterYield,
+      afterActivities,
+      rootPresent:Boolean(TV.scene.getObjectByName('ambient-pedestrian-life'))
     };
   });
-  if(!report.active||!report.townSquareErrands||!report.sunshineParkJoggers||!report.terrainFollowing||!report.routePauses)throw new Error(`Ambient pedestrian feature flags missing ${JSON.stringify(report)}`);
+  if(!report.active||!report.townSquareErrands||!report.sunshineParkJoggers||!report.terrainFollowing||!report.routePauses||!report.contextualDestinationActivities||!report.playerAwareYielding)throw new Error(`Ambient pedestrian feature flags missing ${JSON.stringify(report)}`);
   if(!report.rootPresent||report.walkerCount!==5||report.squareWalkerCount!==3||report.parkJoggerCount!==2)throw new Error(`Ambient pedestrian population did not initialize ${JSON.stringify(report)}`);
-  if(report.before.length!==5||report.after.length!==5)throw new Error(`Ambient pedestrian state count changed unexpectedly ${JSON.stringify(report)}`);
-  const moved=report.after.filter((state,i)=>Math.hypot(state.x-report.before[i].x,state.z-report.before[i].z)>.5||state.completedSegments>report.before[i].completedSegments);
-  if(moved.length!==5)throw new Error(`Not every ambient pedestrian advanced along a route ${JSON.stringify({before:report.before,after:report.after})}`);
-  if(report.after.filter(x=>x.kind==='square-errand').some(x=>x.routePoints<4)||report.after.filter(x=>x.kind==='park-jogger').some(x=>x.routePoints<6))throw new Error(`Ambient pedestrian routes are incomplete ${JSON.stringify(report.after)}`);
-  if(report.after.some(x=>!Number.isFinite(x.y)||!Number.isFinite(x.x)||!Number.isFinite(x.z)))throw new Error(`Ambient pedestrian produced invalid terrain position ${JSON.stringify(report.after)}`);
+  if(report.before.length!==5||report.afterActivities.length!==5)throw new Error(`Ambient pedestrian state count changed unexpectedly ${JSON.stringify(report)}`);
+  const moved=report.afterTravel.filter((state,i)=>Math.hypot(state.x-report.before[i].x,state.z-report.before[i].z)>.5||state.completedSegments>report.before[i].completedSegments);
+  if(moved.length!==5)throw new Error(`Not every ambient pedestrian advanced along a route ${JSON.stringify({before:report.before,after:report.afterTravel})}`);
+  if(report.afterTravel.some(x=>x.destinationActivities!==x.routePoints))throw new Error(`Ambient routes are missing contextual destinations ${JSON.stringify(report.afterTravel)}`);
+  if(report.afterYield[0].yieldCount<=report.afterTravel[0].yieldCount||report.afterYield[0].playerYield<=0)throw new Error(`Nearest ambient pedestrian did not yield to the player ${JSON.stringify({before:report.afterTravel[0],after:report.afterYield[0]})}`);
+  if(report.afterActivities.some(x=>x.activityCount<1))throw new Error(`Not every ambient pedestrian reached a contextual destination ${JSON.stringify(report.afterActivities)}`);
+  if(report.afterActivities.some(x=>!Number.isFinite(x.y)||!Number.isFinite(x.x)||!Number.isFinite(x.z)))throw new Error(`Ambient pedestrian produced invalid terrain position ${JSON.stringify(report.afterActivities)}`);
   if(errors.length)throw new Error(errors.join('\n'));
-  console.log('Ambient Town Square errand walkers and Sunshine Park joggers passed runtime checks',report);
+  console.log('Reactive ambient pedestrians, player yielding, and contextual destination activity passed runtime checks',report);
 }finally{await browser.close();if(server)server.kill('SIGTERM')}
