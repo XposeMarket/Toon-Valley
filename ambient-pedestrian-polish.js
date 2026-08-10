@@ -158,6 +158,8 @@
   const hydrationSessions = new Map();
   const lastHydrationCount = new Map();
   const lastActivity = new Map();
+  const lastBenchActive = new Map();
+  const lastViewpointActive = new Map();
   const lastYield = new Map();
   let yieldFacingCorrections = 0;
   let hydrationSequences = 0;
@@ -272,14 +274,18 @@
 
   function updateBenchRest(state, group) {
     const active = state.kind === 'park-jogger' && state.activity === 'bench' && state.pause > 0;
+    const wasActive = lastBenchActive.get(state.name) === true;
+    lastBenchActive.set(state.name, active);
+    group.userData.toonValleyBenchSeated = false;
     if (!active) return;
     const station = nearest(benchStations, state.x, state.z);
-    if (!station.active) {
+    if (!wasActive) {
       station.sessions += 1;
       benchRestSessions += 1;
     }
     station.active = true;
     group.userData.toonValleyRestBench = station.group.name;
+    group.userData.toonValleyBenchSeated = true;
     const targetY = TV.terrainHeight(station.seatX, station.seatZ);
     group.position.x = lerp(group.position.x, station.seatX, .42);
     group.position.z = lerp(group.position.z, station.seatZ, .42);
@@ -292,6 +298,8 @@
   function updateViewpoint(state, group) {
     const phone = ensurePhotoPhone(group);
     const active = state.kind === 'park-jogger' && state.activity === 'viewpoint' && state.pause > 0;
+    const wasActive = lastViewpointActive.get(state.name) === true;
+    lastViewpointActive.set(state.name, active);
     if (!active) {
       phone.visible = false;
       phone.position.set(.34, 1.08, .12);
@@ -299,7 +307,7 @@
       return;
     }
     const station = nearest(viewpointStations, state.x, state.z);
-    if (!station.active) {
+    if (!wasActive) {
       station.sessions += 1;
       viewpointPhotoSessions += 1;
     }
