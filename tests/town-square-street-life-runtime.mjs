@@ -18,24 +18,30 @@ try{
     let delivered=false, signalSeen=false;
     for(let i=0;i<900;i++){
       A.advance(.25);S.advance(.25);
-      const a=A.getState(),s=S.getState();
+      const s=S.getState();
       if(s.activeSignals>0)signalSeen=true;
       if(s.recipientDeliveries.some(n=>n>0)&&s.recipientThanking.some(Boolean)&&s.recipientParcelVisible.some(Boolean)){delivered=true;break;}
     }
     const afterDelivery=S.getState();
-    const square=A.getState().find(x=>x.kind==='square-errand');
+    let square=A.getState().find(x=>x.kind==='square-errand'&&x.pause===0&&x.playerYield===0);
+    for(let i=0;!square&&i<80;i++){
+      A.advance(.25);S.advance(.25);
+      square=A.getState().find(x=>x.kind==='square-errand'&&x.pause===0&&x.playerYield===0);
+    }
+    if(!square)return {start,afterDelivery,delivered,signalSeen,yielded:null,facingError:Infinity,afterYieldStreet:S.getState(),rootPresent:Boolean(TV.scene.getObjectByName('town-square-street-life'))};
     const walker=TV.scene.getObjectByName(square.name);
     TV.player.position.x=walker.position.x+.4;TV.player.position.z=walker.position.z+.3;
     A.advance(.1);const yielded=A.getState().find(x=>x.name===square.name);S.advance(.1);
+    const afterYieldStreet=S.getState();
     const dx=TV.player.position.x-walker.position.x,dz=TV.player.position.z-walker.position.z;
     const desired=Math.atan2(dx,dz);const facingError=Math.abs(Math.atan2(Math.sin(walker.rotation.y-desired),Math.cos(walker.rotation.y-desired)));
-    return {start,afterDelivery,delivered,signalSeen,yielded,facingError,rootPresent:Boolean(TV.scene.getObjectByName('town-square-street-life'))};
+    return {start,afterDelivery,delivered,signalSeen,yielded,facingError,afterYieldStreet,rootPresent:Boolean(TV.scene.getObjectByName('town-square-street-life'))};
   });
   if(!report.rootPresent||report.start.recipientCount!==3||report.start.crosswalkSignalCount!==6)throw new Error(`Street-life population failed ${JSON.stringify(report)}`);
   if(!report.start.finitePositions)throw new Error(`Recipient positions invalid ${JSON.stringify(report.start)}`);
   if(!report.delivered||!report.afterDelivery.recipientDeliveries.some(n=>n>0)||!report.afterDelivery.recipientParcelVisible.some(Boolean))throw new Error(`Physical parcel recipient handoff never occurred ${JSON.stringify(report)}`);
   if(!report.signalSeen||!report.afterDelivery.signalActivations.some(n=>n>0))throw new Error(`Reactive crosswalk signals never activated ${JSON.stringify(report)}`);
-  if(!(report.yielded.playerYield>0)||report.facingError>.12||report.afterDelivery.yieldFacingCorrections<0)throw new Error(`Yield-facing repair failed ${JSON.stringify(report)}`);
+  if(!report.yielded||!(report.yielded.playerYield>0)||report.facingError>.12||report.afterYieldStreet.yieldFacingCorrections<=report.afterDelivery.yieldFacingCorrections)throw new Error(`Yield-facing repair failed ${JSON.stringify(report)}`);
   if(errors.length)throw new Error(errors.join('\n'));
   console.log('Town Square recipient handoffs, crosswalk signals, and yield-facing repair passed',report);
 }finally{await browser.close();if(server)server.kill('SIGTERM')}
