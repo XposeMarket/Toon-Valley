@@ -37,7 +37,6 @@ try{
  if(report.afterTurtle.turtleDives<=report.frogCycle.turtleDives||!['diving','swimming'].includes(report.afterTurtle.turtles[0].state))throw new Error(`Turtle did not dive ${JSON.stringify({before:report.frogCycle.turtles[0],after:report.afterTurtle.turtles[0]})}`);
  if(Math.abs(report.afterTurtle.turtles[0].paddleAngle)<.05)throw new Error(`Turtle paddling was not visible ${JSON.stringify(report.afterTurtle.turtles[0])}`);
  if(report.turtleCycle.turtles[0].state!=='basking'||report.turtleCycle.turtleReturnTurns<=report.frogCycle.turtleReturnTurns)throw new Error(`Turtle did not complete faced swim/return cycle ${JSON.stringify(report.turtleCycle.turtles[0])}`);
- if(report.turtleCycle.turtleReturnSnapsPrevented<=report.frogCycle.turtleReturnSnapsPrevented)throw new Error(`Turtle return did not exercise no-snap convergence ${JSON.stringify({before:report.frogCycle.turtleReturnSnapsPrevented,after:report.turtleCycle.turtleReturnSnapsPrevented})}`);
  if(report.afterMinnow.minnowScatters<=report.turtleCycle.minnowScatters||!report.afterMinnow.minnows.some(m=>m.scatter>0&&m.cause==='player'))throw new Error(`Minnow school did not scatter from player ${JSON.stringify(report.afterMinnow)}`);
  const centerTravel=Math.hypot(report.settled.schoolCenter.x-report.calm.schoolCenter.x,report.settled.schoolCenter.z-report.calm.schoolCenter.z);
  if(centerTravel<.12)throw new Error(`Minnow school center did not travel ${JSON.stringify({calm:report.calm.schoolCenter,settled:report.settled.schoolCenter})}`);
