@@ -21,9 +21,11 @@ jobs:
       - name: Syntax checks
         run: |
           node --check ambient-pedestrian-life.js
+          node --check ambient-pedestrian-polish.js
           node --check town-square-street-life.js
           node --check ambient-world-details.js
           node --check tests/ambient-pedestrian-runtime.mjs
+          node --check tests/ambient-pedestrian-polish-runtime.mjs
           node --check tests/town-square-street-life-runtime.mjs
           node --check tests/ambient-world-details-runtime.mjs
       - name: Install browser runtime
@@ -33,6 +35,7 @@ jobs:
       - name: Local ambient pedestrian runtime
         run: |
           timeout 150s node tests/ambient-pedestrian-runtime.mjs
+          timeout 150s node tests/ambient-pedestrian-polish-runtime.mjs
           timeout 150s node tests/town-square-street-life-runtime.mjs
           timeout 150s node tests/ambient-world-details-runtime.mjs
       - name: Production ambient pedestrian runtime
@@ -41,5 +44,6 @@ jobs:
           BASE_URL: https://toon-valley.vercel.app
         run: |
           timeout 150s node tests/ambient-pedestrian-runtime.mjs
+          timeout 150s node tests/ambient-pedestrian-polish-runtime.mjs
           timeout 150s node tests/town-square-street-life-runtime.mjs
           timeout 150s node tests/ambient-world-details-runtime.mjs
