@@ -37,6 +37,10 @@
     { x: LAKE.x - LAKE.rx * .68, z: LAKE.z + LAKE.rz * .38 }
   ];
 
+  function shorelineFloor(x, z) {
+    return Math.max(TV.terrainHeight(x, z), waterY - .12);
+  }
+
   function makeDuck(index) {
     const group = new THREE.Group();
     group.name = `bluebell-duck-${index + 1}`;
@@ -76,7 +80,7 @@
     leftBack.position.set(-.09, .02, -.08); rightBack.position.set(.09, .02, -.08);
     group.add(body, leftFront, rightFront, leftBack, rightBack);
     const anchor = dragonAnchors[index % dragonAnchors.length];
-    group.position.set(anchor.x, TV.terrainHeight(anchor.x, anchor.z) + 1.2, anchor.z);
+    group.position.set(anchor.x, shorelineFloor(anchor.x, anchor.z) + 1.2, anchor.z);
     root.add(group);
     dragonflies.push({ group, index, anchorIndex: index, phase: index * 1.42, dodge: 0, dodgeCount: 0, orbitCount: 0, wings: [leftFront, rightFront, leftBack, rightBack] });
   }
@@ -132,7 +136,7 @@
     const follow = Math.min(1, dt * (dragon.dodge > 0 ? 7 : 3.2));
     dragon.group.position.x += (desiredX - dragon.group.position.x) * follow;
     dragon.group.position.z += (desiredZ - dragon.group.position.z) * follow;
-    const ground = TV.terrainHeight(dragon.group.position.x, dragon.group.position.z);
+    const ground = shorelineFloor(dragon.group.position.x, dragon.group.position.z);
     dragon.group.position.y = ground + 1.05 + Math.sin(elapsed * 4.2 + dragon.phase) * .18 + (dragon.dodge > 0 ? .42 : 0);
     dragon.group.rotation.y = Math.atan2(desiredX - dragon.group.position.x, desiredZ - dragon.group.position.z);
     const flap = Math.sin(elapsed * 28 + dragon.index) * .7;
