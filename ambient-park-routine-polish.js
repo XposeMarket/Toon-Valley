@@ -19,6 +19,7 @@
   ];
   const lampIdle = 0x40505a;
   const lampActive = [0x8ff0a4, 0xffe17d, 0x82d8ff];
+  const carryBottle = Object.freeze({ x: .3, y: 1.05, z: .13 });
 
   const gateSpecs = [
     { x: -86, z: 47, yaw: Math.atan2(10, -1) },
@@ -56,6 +57,7 @@
   const joggerTowels = new Map();
   let lapGatePasses = 0;
   let towelRecoverySessions = 0;
+  let hydrationOverlapPreventions = 0;
   let residualBenchPoseResets = 0;
   let elapsed = 0;
 
@@ -112,13 +114,32 @@
     }
   }
 
+  function bottleIsBusy(group) {
+    const bottle = group.getObjectByName('jogger-water-bottle');
+    if (!bottle) return false;
+    return Math.hypot(
+      bottle.position.x - carryBottle.x,
+      bottle.position.y - carryBottle.y,
+      bottle.position.z - carryBottle.z
+    ) > .14;
+  }
+
   function updateRecoveryTowel(state, group, index) {
     const towel = ensureJoggerTowel(group, index);
-    const active = state.activity === 'bench' && state.pause > 0;
+    const atBench = state.activity === 'bench' && state.pause > 0;
+    const hydrating = atBench && bottleIsBusy(group);
+    const active = atBench && !hydrating;
     const benchName = group.userData.toonValleyRestBench;
     const stationTowel = benchName ? stationTowels.get(benchName) : null;
     const wasActive = Boolean(group.userData.toonValleyRecoveryTowelActive);
     group.userData.toonValleyRecoveryTowelActive = active;
+
+    if (hydrating && !group.userData.toonValleyRecoveryHydrationHold) {
+      hydrationOverlapPreventions += 1;
+      group.userData.toonValleyRecoveryHydrationHold = true;
+    } else if (!hydrating) {
+      group.userData.toonValleyRecoveryHydrationHold = false;
+    }
 
     if (!active) {
       towel.visible = false;
@@ -171,6 +192,7 @@
       joggerTowelCount: joggerTowels.size,
       lapGatePasses,
       towelRecoverySessions,
+      hydrationOverlapPreventions,
       residualBenchPoseResets,
       activeGateFlashes: paceGates.filter(gate => gate.flashLeft > 0).length,
       activeRecoveryTowels: [...joggerTowels.values()].filter(towel => towel.visible).length,
@@ -183,6 +205,7 @@
     active: true,
     physicalLapTimingGates: true,
     physicalBenchRecoveryTowels: true,
+    hydrationRecoverySequencing: true,
     benchPoseLeakFix: true,
     getState,
     advance
