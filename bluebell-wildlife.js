@@ -14,6 +14,7 @@
   const duckBodyGeometry = new THREE.SphereGeometry(.3, 8, 6);
   const duckHeadGeometry = new THREE.SphereGeometry(.17, 8, 6);
   const duckWingGeometry = new THREE.SphereGeometry(.2, 7, 5);
+  const duckBillGeometry = new THREE.BoxGeometry(.13, .055, .16);
   const duckBodyMaterials = [0x73563c, 0x5d754b, 0xc5aa72].map(color => new THREE.MeshToonMaterial({ color }));
   const duckHeadMaterials = [0x4d6d43, 0x664b36, 0x8d754f].map(color => new THREE.MeshToonMaterial({ color }));
   const billMaterial = new THREE.MeshToonMaterial({ color: 0xe0a33d });
@@ -28,7 +29,9 @@
   const dragonflies = [];
   let elapsed = 0;
   let duckEscapes = 0;
+  let duckDabbles = 0;
   let dragonflyDodges = 0;
+  let dragonflyPerches = 0;
 
   const dragonAnchors = [
     { x: LAKE.x - LAKE.rx * .62, z: LAKE.z - LAKE.rz * .55 },
@@ -49,7 +52,7 @@
     body.position.y = .18;
     const head = new THREE.Mesh(duckHeadGeometry, duckHeadMaterials[index % duckHeadMaterials.length]);
     head.position.set(0, .42, .29);
-    const bill = new THREE.Mesh(new THREE.BoxGeometry(.13, .055, .16), billMaterial);
+    const bill = new THREE.Mesh(duckBillGeometry, billMaterial);
     bill.position.set(0, .4, .48);
     const leftWing = new THREE.Mesh(duckWingGeometry, duckBodyMaterials[index % duckBodyMaterials.length]);
     const rightWing = leftWing.clone();
@@ -60,10 +63,26 @@
     wake.rotation.z = Math.PI;
     wake.position.set(0, .02, -.47);
     group.add(body, head, bill, leftWing, rightWing, wake);
-    const angle = .5 + index * 2.05;
-    group.position.set(LAKE.x + Math.cos(angle) * (7 + index * 1.5), waterY, LAKE.z + Math.sin(angle) * (5.2 + index));
+    const angle = .5 + index * .24;
+    group.position.set(LAKE.x + Math.cos(angle) * (7.2 - index * .9), waterY, LAKE.z + Math.sin(angle) * (5.4 - index * .55));
     root.add(group);
-    ducks.push({ group, index, phase: angle, speed: .34 + index * .035, escape: 0, escapeCount: 0, wake, bobPhase: index * 1.7 });
+    ducks.push({
+      group,
+      body,
+      head,
+      bill,
+      index,
+      phase: angle,
+      speed: .34,
+      escape: 0,
+      escapeCount: 0,
+      wake,
+      bobPhase: index * 1.7,
+      feed: 0,
+      feedCooldown: 3.4 + index * 1.35,
+      feedCount: 0,
+      formationDistance: 0
+    });
   }
 
   function makeDragonfly(index) {
@@ -82,7 +101,19 @@
     const anchor = dragonAnchors[index % dragonAnchors.length];
     group.position.set(anchor.x, shorelineFloor(anchor.x, anchor.z) + 1.2, anchor.z);
     root.add(group);
-    dragonflies.push({ group, index, anchorIndex: index, phase: index * 1.42, dodge: 0, dodgeCount: 0, orbitCount: 0, wings: [leftFront, rightFront, leftBack, rightBack] });
+    dragonflies.push({
+      group,
+      index,
+      anchorIndex: index,
+      phase: index * 1.42,
+      dodge: 0,
+      dodgeCount: 0,
+      orbitCount: 0,
+      perch: 0,
+      perchCooldown: 2.8 + index * 1.15,
+      perchCount: 0,
+      wings: [leftFront, rightFront, leftBack, rightBack]
+    });
   }
 
   for (let i = 0; i < 3; i++) makeDuck(i);
@@ -95,54 +126,113 @@
     return dx * dx + dz * dz;
   }
 
+  function alertDuckFamily(duck) {
+    duck.escapeCount += 1;
+    duckEscapes += 1;
+    ducks.forEach(member => {
+      member.escape = Math.max(member.escape, member === duck ? 2.4 : 1.8);
+      member.feed = 0;
+      member.feedCooldown = Math.max(member.feedCooldown, 2.2);
+    });
+    ducks[0].phase += Math.PI * .72;
+  }
+
   function updateDuck(duck, dt) {
     duck.escape = Math.max(0, duck.escape - dt);
-    if (duck.escape <= 0 && playerDistance2(duck.group.position) < 4.3 * 4.3) {
-      duck.escape = 2.4;
-      duck.escapeCount += 1;
-      duckEscapes += 1;
-      duck.phase += Math.PI * .72;
+    duck.feed = Math.max(0, duck.feed - dt);
+    duck.feedCooldown = Math.max(0, duck.feedCooldown - dt);
+
+    if (duck.escape <= 0 && playerDistance2(duck.group.position) < 4.3 * 4.3) alertDuckFamily(duck);
+
+    if (duck.escape <= 0 && duck.feed <= 0 && duck.feedCooldown <= 0) {
+      duck.feed = 1.25 + duck.index * .08;
+      duck.feedCooldown = 5.4 + duck.index * 1.15;
+      duck.feedCount += 1;
+      duckDabbles += 1;
     }
-    const boost = duck.escape > 0 ? 2.35 : 1;
-    duck.phase += dt * duck.speed * boost;
-    const rx = LAKE.rx * (.34 + duck.index * .055);
-    const rz = LAKE.rz * (.3 + duck.index * .045);
-    const desiredX = LAKE.x + Math.cos(duck.phase) * rx;
-    const desiredZ = LAKE.z + Math.sin(duck.phase * .92 + duck.index * .3) * rz;
+
+    let desiredX;
+    let desiredZ;
+    if (duck.index === 0) {
+      const boost = duck.escape > 0 ? 2.35 : (duck.feed > 0 ? .18 : 1);
+      duck.phase += dt * duck.speed * boost;
+      desiredX = LAKE.x + Math.cos(duck.phase) * (LAKE.rx * .38);
+      desiredZ = LAKE.z + Math.sin(duck.phase * .92) * (LAKE.rz * .34);
+      duck.formationDistance = 0;
+    } else {
+      const guide = ducks[duck.index - 1];
+      const forwardX = Math.sin(guide.group.rotation.y);
+      const forwardZ = Math.cos(guide.group.rotation.y);
+      const side = duck.index % 2 === 0 ? .38 : -.38;
+      desiredX = guide.group.position.x - forwardX * 1.05 + forwardZ * side;
+      desiredZ = guide.group.position.z - forwardZ * 1.05 - forwardX * side;
+      duck.formationDistance = Math.hypot(duck.group.position.x - desiredX, duck.group.position.z - desiredZ);
+    }
+
     const dx = desiredX - duck.group.position.x, dz = desiredZ - duck.group.position.z;
     const distance = Math.hypot(dx, dz);
-    const follow = Math.min(1, dt * (duck.escape > 0 ? 5.5 : 2.2));
+    const follow = Math.min(1, dt * (duck.escape > 0 ? 5.5 : duck.index === 0 ? 2.2 : 3.4));
     duck.group.position.x += dx * follow;
     duck.group.position.z += dz * follow;
     duck.group.position.y = waterY + Math.sin(elapsed * 2.3 + duck.bobPhase) * .035;
     if (distance > .01) duck.group.rotation.y = Math.atan2(dx, dz);
-    duck.wake.material.opacity = .2 + (duck.escape > 0 ? .34 : .12) + Math.sin(elapsed * 5 + duck.index) * .04;
-    duck.wake.scale.setScalar(duck.escape > 0 ? 1.35 : 1);
+
+    const feedPose = duck.feed > 0 ? Math.sin(Math.min(1, (1.25 + duck.index * .08 - duck.feed) / .32) * Math.PI / 2) : 0;
+    duck.head.position.y = .42 - feedPose * .22;
+    duck.head.position.z = .29 + feedPose * .11;
+    duck.bill.position.y = .4 - feedPose * .24;
+    duck.bill.position.z = .48 + feedPose * .08;
+    duck.body.rotation.x = -feedPose * .08;
+
+    duck.wake.material.opacity = .2 + (duck.escape > 0 ? .34 : duck.feed > 0 ? .02 : .12) + Math.sin(elapsed * 5 + duck.index) * .04;
+    duck.wake.scale.setScalar(duck.escape > 0 ? 1.35 : duck.feed > 0 ? .72 : 1);
   }
 
   function updateDragonfly(dragon, dt) {
     dragon.phase += dt * (1.25 + dragon.index * .06);
     dragon.dodge = Math.max(0, dragon.dodge - dt);
+    dragon.perch = Math.max(0, dragon.perch - dt);
+    dragon.perchCooldown = Math.max(0, dragon.perchCooldown - dt);
+
     if (dragon.dodge <= 0 && playerDistance2(dragon.group.position) < 2.2 * 2.2) {
       dragon.dodge = 1.15;
+      dragon.perch = 0;
+      dragon.perchCooldown = Math.max(dragon.perchCooldown, 2.4);
       dragon.dodgeCount += 1;
       dragonflyDodges += 1;
-      dragon.anchorIndex = (dragon.anchorIndex + 1 + dragon.index) % dragonAnchors.length;
+      const anchorStep = 1 + (dragon.index % Math.max(1, dragonAnchors.length - 1));
+      dragon.anchorIndex = (dragon.anchorIndex + anchorStep) % dragonAnchors.length;
     }
+
+    if (dragon.dodge <= 0 && dragon.perch <= 0 && dragon.perchCooldown <= 0) {
+      dragon.perch = 1.3 + dragon.index * .08;
+      dragon.perchCooldown = 5.5 + dragon.index * .9;
+      dragon.perchCount += 1;
+      dragonflyPerches += 1;
+    }
+
     const anchor = dragonAnchors[dragon.anchorIndex];
-    const radius = dragon.dodge > 0 ? 1.35 : .58;
+    const perched = dragon.perch > 0 && dragon.dodge <= 0;
+    const radius = perched ? 0 : dragon.dodge > 0 ? 1.35 : .58;
     const desiredX = anchor.x + Math.cos(dragon.phase * 1.7) * radius;
     const desiredZ = anchor.z + Math.sin(dragon.phase * 1.35) * radius;
-    const follow = Math.min(1, dt * (dragon.dodge > 0 ? 7 : 3.2));
+    const follow = Math.min(1, dt * (dragon.dodge > 0 ? 7 : perched ? 5 : 3.2));
+    const beforeX = dragon.group.position.x;
+    const beforeZ = dragon.group.position.z;
     dragon.group.position.x += (desiredX - dragon.group.position.x) * follow;
     dragon.group.position.z += (desiredZ - dragon.group.position.z) * follow;
     const ground = shorelineFloor(dragon.group.position.x, dragon.group.position.z);
-    dragon.group.position.y = ground + 1.05 + Math.sin(elapsed * 4.2 + dragon.phase) * .18 + (dragon.dodge > 0 ? .42 : 0);
-    dragon.group.rotation.y = Math.atan2(desiredX - dragon.group.position.x, desiredZ - dragon.group.position.z);
-    const flap = Math.sin(elapsed * 28 + dragon.index) * .7;
+    const hoverY = ground + 1.05 + Math.sin(elapsed * 4.2 + dragon.phase) * .18 + (dragon.dodge > 0 ? .42 : 0);
+    dragon.group.position.y += ((perched ? ground + .52 : hoverY) - dragon.group.position.y) * Math.min(1, dt * (perched ? 7 : 6));
+    const moveX = dragon.group.position.x - beforeX;
+    const moveZ = dragon.group.position.z - beforeZ;
+    if (Math.hypot(moveX, moveZ) > .002) dragon.group.rotation.y = Math.atan2(moveX, moveZ);
+    const flapSpeed = perched ? 5 : 28;
+    const flapAmount = perched ? .14 : .7;
+    const flap = Math.sin(elapsed * flapSpeed + dragon.index) * flapAmount;
     dragon.wings[0].rotation.z = flap; dragon.wings[1].rotation.z = -flap;
     dragon.wings[2].rotation.z = -flap * .8; dragon.wings[3].rotation.z = flap * .8;
-    if (Math.hypot(desiredX - dragon.group.position.x, desiredZ - dragon.group.position.z) < .08) dragon.orbitCount += 1;
+    if (!perched && Math.hypot(desiredX - dragon.group.position.x, desiredZ - dragon.group.position.z) < .08) dragon.orbitCount += 1;
   }
 
   function advance(dt = 0) {
@@ -159,9 +249,33 @@
       duckCount: ducks.length,
       dragonflyCount: dragonflies.length,
       duckEscapes,
+      duckDabbles,
       dragonflyDodges,
-      ducks: ducks.map(duck => ({ name: duck.group.name, x: duck.group.position.x, y: duck.group.position.y, z: duck.group.position.z, escape: duck.escape, escapeCount: duck.escapeCount, phase: duck.phase })),
-      dragonflies: dragonflies.map(dragon => ({ name: dragon.group.name, x: dragon.group.position.x, y: dragon.group.position.y, z: dragon.group.position.z, anchorIndex: dragon.anchorIndex, dodge: dragon.dodge, dodgeCount: dragon.dodgeCount, orbitCount: dragon.orbitCount }))
+      dragonflyPerches,
+      ducks: ducks.map(duck => ({
+        name: duck.group.name,
+        x: duck.group.position.x,
+        y: duck.group.position.y,
+        z: duck.group.position.z,
+        escape: duck.escape,
+        escapeCount: duck.escapeCount,
+        phase: duck.phase,
+        feed: duck.feed,
+        feedCount: duck.feedCount,
+        formationDistance: duck.formationDistance
+      })),
+      dragonflies: dragonflies.map(dragon => ({
+        name: dragon.group.name,
+        x: dragon.group.position.x,
+        y: dragon.group.position.y,
+        z: dragon.group.position.z,
+        anchorIndex: dragon.anchorIndex,
+        dodge: dragon.dodge,
+        dodgeCount: dragon.dodgeCount,
+        orbitCount: dragon.orbitCount,
+        perch: dragon.perch,
+        perchCount: dragon.perchCount
+      }))
     };
   }
 
@@ -169,7 +283,10 @@
     active: true,
     swimmingDuckFamily: true,
     reactiveWakeEffects: true,
+    duckFamilyCohesion: true,
+    duckDabbling: true,
     shorelineDragonflies: true,
+    dragonflyPerching: true,
     playerReactiveWildlife: true,
     lowPopulationBudget: true,
     advance,
