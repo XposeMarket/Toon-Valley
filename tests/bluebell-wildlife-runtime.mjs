@@ -16,7 +16,7 @@ try{
     const W=window.ToonValleyBluebellWildlife,TV=window.ToonValley,L=window.ToonValleyBluebellLake;
     TV.player.position.set(220,TV.terrainHeight(220,220),220);
     const before=W.getState();
-    for(let i=0;i<50;i++)W.advance(.2);
+    for(let i=0;i<70;i++)W.advance(.2);
     const afterCruise=W.getState();
     const duck=afterCruise.ducks[0];
     TV.player.position.set(duck.x,duck.y,duck.z);
@@ -39,27 +39,36 @@ try{
       for(let i=0;i<14;i++)W.advance(.1);
     }
 
-    for(let i=0;i<50;i++)W.advance(.2);
+    for(let i=0;i<70;i++)W.advance(.2);
     const afterOrbit=W.getState();
     const root=TV.scene.getObjectByName('bluebell-wildlife');
-    return {flags:{active:W.active,ducks:W.swimmingDuckFamily,wakes:W.reactiveWakeEffects,cohesion:W.duckFamilyCohesion,dabbling:W.duckDabbling,dragons:W.shorelineDragonflies,perching:W.dragonflyPerching,reactive:W.playerReactiveWildlife,budget:W.lowPopulationBudget},lake:L.lake,before,afterCruise,afterDuckEscape,calm,afterDragonDodge,dodgeRelocations,afterOrbit,rootPresent:Boolean(root),childCount:root?.children.length||0};
+    const perchObjects=[];
+    for(let i=1;i<=4;i++){
+      const perch=root?.getObjectByName(`bluebell-dragonfly-perch-${i}`);
+      perchObjects.push({name:perch?.name||'',present:Boolean(perch),children:perch?.children.length||0,y:perch?.position.y??null});
+    }
+    return {flags:{active:W.active,ducks:W.swimmingDuckFamily,wakes:W.reactiveWakeEffects,cohesion:W.duckFamilyCohesion,dabbling:W.duckDabbling,preening:W.duckPreening,dragons:W.shorelineDragonflies,perching:W.dragonflyPerching,physicalPerches:W.physicalDragonflyPerches,reactive:W.playerReactiveWildlife,budget:W.lowPopulationBudget},lake:L.lake,before,afterCruise,afterDuckEscape,calm,afterDragonDodge,dodgeRelocations,afterOrbit,rootPresent:Boolean(root),childCount:root?.children.length||0,perchObjects};
   });
   if(!Object.values(report.flags).every(Boolean))throw new Error(`Bluebell wildlife capability flags missing ${JSON.stringify(report.flags)}`);
-  if(!report.rootPresent||report.childCount!==7||report.before.duckCount!==3||report.before.dragonflyCount!==4)throw new Error(`Bluebell wildlife population did not initialize ${JSON.stringify(report)}`);
+  if(!report.rootPresent||report.childCount!==11||report.before.duckCount!==3||report.before.dragonflyCount!==4||report.before.perchCount!==4)throw new Error(`Bluebell wildlife population/perches did not initialize ${JSON.stringify(report)}`);
+  if(report.perchObjects.some(p=>!p.present||p.children<4||!Number.isFinite(p.y)))throw new Error(`Physical shoreline dragonfly perches are missing or malformed ${JSON.stringify(report.perchObjects)}`);
   const duckMoved=report.afterCruise.ducks.some((d,i)=>Math.hypot(d.x-report.before.ducks[i].x,d.z-report.before.ducks[i].z)>.3);
   if(!duckMoved)throw new Error(`Bluebell ducks did not swim ${JSON.stringify({before:report.before.ducks,after:report.afterCruise.ducks})}`);
   if(report.afterCruise.duckDabbles<1||!report.afterCruise.ducks.some(d=>d.feedCount>0))throw new Error(`Duck family did not enter physical dabbling/feeding cycles ${JSON.stringify(report.afterCruise.ducks)}`);
+  if(report.afterCruise.duckPreens<1||!report.afterCruise.ducks.some(d=>d.preenCount>0))throw new Error(`Duck family did not enter physical preening/rest cycles ${JSON.stringify(report.afterCruise.ducks)}`);
   if(report.afterCruise.ducks.slice(1).some(d=>!Number.isFinite(d.formationDistance)||d.formationDistance>2.4))throw new Error(`Duck family lost formation cohesion ${JSON.stringify(report.afterCruise.ducks)}`);
   if(report.afterDuckEscape.duckEscapes<=report.afterCruise.duckEscapes||!report.afterDuckEscape.ducks.some((d,i)=>d.escapeCount>report.afterCruise.ducks[i].escapeCount&&d.escape>0))throw new Error(`Duck family did not react to nearby player/boat position ${JSON.stringify({before:report.afterCruise,after:report.afterDuckEscape})}`);
   if(!report.afterDuckEscape.ducks.every(d=>d.escape>0))throw new Error(`Duck alert did not propagate through the family ${JSON.stringify(report.afterDuckEscape.ducks)}`);
+  if(report.afterDuckEscape.ducks.some(d=>d.preen>0))throw new Error(`Duck preening did not cancel during family escape ${JSON.stringify(report.afterDuckEscape.ducks)}`);
   const lake=report.lake;
   if(report.afterOrbit.ducks.some(d=>!Number.isFinite(d.x)||!Number.isFinite(d.y)||!Number.isFinite(d.z)||Math.abs(d.x-lake.x)>lake.rx||Math.abs(d.z-lake.z)>lake.rz))throw new Error(`Duck left playable lake bounds or became invalid ${JSON.stringify(report.afterOrbit.ducks)}`);
   if(report.afterCruise.dragonflyPerches<1||!report.afterCruise.dragonflies.some(d=>d.perchCount>0))throw new Error(`Dragonflies did not use shoreline perch/rest cycles ${JSON.stringify(report.afterCruise.dragonflies)}`);
+  if(report.afterCruise.dragonflies.some(d=>!d.perchName||!Number.isFinite(d.perchY)))throw new Error(`Dragonflies are not mapped to physical shoreline perch targets ${JSON.stringify(report.afterCruise.dragonflies)}`);
   if(!report.afterDragonDodge||report.afterDragonDodge.dragonflyDodges<=report.calm.dragonflyDodges||!report.afterDragonDodge.dragonflies.some((d,i)=>d.dodgeCount>report.calm.dragonflies[i].dodgeCount&&d.dodge>0))throw new Error(`Shoreline dragonfly did not dodge nearby player ${JSON.stringify({before:report.calm,after:report.afterDragonDodge})}`);
   if(report.dodgeRelocations.length!==4||report.dodgeRelocations.some(d=>d.afterCount<=d.beforeCount||d.dodge<=0||d.afterAnchor===d.beforeAnchor))throw new Error(`Every dragonfly must relocate to a different shoreline anchor when disturbed ${JSON.stringify(report.dodgeRelocations)}`);
   const dragonMoved=report.afterOrbit.dragonflies.some((d,i)=>Math.hypot(d.x-report.afterDragonDodge.dragonflies[i].x,d.z-report.afterDragonDodge.dragonflies[i].z)>.2||d.orbitCount>report.afterDragonDodge.dragonflies[i].orbitCount||d.perchCount>report.afterDragonDodge.dragonflies[i].perchCount);
   if(!dragonMoved)throw new Error(`Dragonflies did not continue shoreline patrol/rest behavior ${JSON.stringify({before:report.afterDragonDodge.dragonflies,after:report.afterOrbit.dragonflies})}`);
   if(report.afterOrbit.dragonflies.some(d=>!Number.isFinite(d.x)||!Number.isFinite(d.y)||!Number.isFinite(d.z)||d.y<0))throw new Error(`Dragonfly terrain state became invalid ${JSON.stringify(report.afterOrbit.dragonflies)}`);
   if(errors.length)throw new Error(errors.join('\n'));
-  console.log('Bluebell duck family formation/dabbling and shoreline dragonfly perch/dodge cycles passed runtime checks',report);
+  console.log('Bluebell duck family formation/dabbling/preening and physical dragonfly perch/dodge cycles passed runtime checks',report);
 }finally{await browser.close();if(server)server.kill('SIGTERM')}
