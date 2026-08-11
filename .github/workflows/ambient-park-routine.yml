@@ -1,0 +1,31 @@
+name: Ambient Park Routine Regression
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax checks
+        run: |
+          node --check ambient-park-routine-polish.js
+          node --check tests/ambient-park-routine-polish-runtime.mjs
+      - name: Install Chromium runtime
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Local park pace and recovery gameplay test
+        run: timeout 180s node tests/ambient-park-routine-polish-runtime.mjs
+      - name: Production park pace and recovery gameplay test
+        if: github.event_name == 'push'
+        env:
+          BASE_URL: https://toon-valley.vercel.app
+        run: timeout 180s node tests/ambient-park-routine-polish-runtime.mjs
