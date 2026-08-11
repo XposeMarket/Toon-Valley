@@ -196,36 +196,53 @@
   function updateRecoveryTowel(state, group, index, activeTowelBenches) {
     const towel = ensureJoggerTowel(group, index);
     const atBench = state.activity === 'bench' && state.pause > 0;
-    const hydrating = atBench && bottleIsBusy(group);
     const benchName = group.userData.toonValleyRestBench || null;
-    let recovery = recoveryStates.get(state.name) || { phase: 'none', benchName: null, lingerUntil: 0 };
-    const interrupted = state.activity === 'greeting' || state.activity === 'socializing' || state.playerYield > 0;
-    const canLinger = !atBench && !interrupted && (recovery.phase === 'towel' || recovery.phase === 'linger') && elapsed < recovery.lingerUntil;
-    const active = (atBench && !hydrating) || canLinger;
+    const bottle = group.getObjectByName('jogger-water-bottle');
+    let recovery = recoveryStates.get(state.name) || { phase: 'none', benchName: null, hydrationUntil: 0, lingerUntil: 0 };
     const previousPhase = recovery.phase;
+    const continuingBench = atBench && recovery.benchName === benchName && (recovery.phase === 'hydration' || recovery.phase === 'towel');
 
-    if (hydrating) {
-      recovery = { phase: 'hydration', benchName, lingerUntil: 0 };
-      if (previousPhase !== 'hydration') hydrationOverlapPreventions += 1;
+    if (atBench && !continuingBench) {
+      recovery = { phase: 'hydration', benchName, hydrationUntil: elapsed + 1.68, lingerUntil: 0 };
+      hydrationOverlapPreventions += 1;
       group.userData.toonValleyRecoveryHydrationHold = true;
-    } else if (atBench) {
-      if (previousPhase !== 'towel') {
+    }
+
+    const interrupted = state.activity === 'greeting' || state.activity === 'socializing' || state.playerYield > 0;
+    const timedHydration = atBench && recovery.phase === 'hydration' && elapsed < recovery.hydrationUntil;
+    const hydrationFinished = atBench && recovery.phase === 'hydration' && elapsed >= recovery.hydrationUntil;
+    const canLinger = !atBench && !interrupted && (recovery.phase === 'towel' || recovery.phase === 'linger') && elapsed < recovery.lingerUntil;
+
+    if (timedHydration) {
+      group.userData.toonValleyRecoveryHydrationHold = true;
+    } else if (hydrationFinished || (atBench && recovery.phase === 'towel')) {
+      if (recovery.phase !== 'towel') {
         towelRecoverySessions += 1;
-        if (previousPhase === 'hydration') stagedRecoveryTransitions += 1;
+        stagedRecoveryTransitions += 1;
       }
-      recovery = { phase: 'towel', benchName, lingerUntil: elapsed + .9 };
+      recovery.phase = 'towel';
+      recovery.lingerUntil = elapsed + .9;
       group.userData.toonValleyRecoveryHydrationHold = false;
+      if (bottle) {
+        bottle.position.set(carryBottle.x, carryBottle.y, carryBottle.z);
+        bottle.rotation.set(.05, 0, -.18);
+      }
     } else if (canLinger) {
       if (previousPhase !== 'linger') lingerRecoverySessions += 1;
       recovery.phase = 'linger';
       group.userData.toonValleyRecoveryHydrationHold = false;
+      if (bottle) {
+        bottle.position.set(carryBottle.x, carryBottle.y, carryBottle.z);
+        bottle.rotation.set(.05, 0, -.18);
+      }
       holdAtRecoveryBench(group, recovery.benchName);
-    } else {
-      recovery = { phase: 'none', benchName: null, lingerUntil: 0 };
+    } else if (!atBench) {
+      recovery = { phase: 'none', benchName: null, hydrationUntil: 0, lingerUntil: 0 };
       group.userData.toonValleyRecoveryHydrationHold = false;
     }
 
     recoveryStates.set(state.name, recovery);
+    const active = recovery.phase === 'towel' || recovery.phase === 'linger';
     group.userData.toonValleyRecoveryTowelActive = active;
 
     if (!active) {
