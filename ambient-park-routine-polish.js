@@ -199,7 +199,8 @@
     const hydrating = atBench && bottleIsBusy(group);
     const benchName = group.userData.toonValleyRestBench || null;
     let recovery = recoveryStates.get(state.name) || { phase: 'none', benchName: null, lingerUntil: 0 };
-    const canLinger = !atBench && state.activity == null && state.pause <= 0 && state.playerYield <= 0 && elapsed < recovery.lingerUntil;
+    const interrupted = state.activity === 'greeting' || state.activity === 'socializing' || state.playerYield > 0;
+    const canLinger = !atBench && !interrupted && (recovery.phase === 'towel' || recovery.phase === 'linger') && elapsed < recovery.lingerUntil;
     const active = (atBench && !hydrating) || canLinger;
     const previousPhase = recovery.phase;
 
@@ -250,7 +251,7 @@
   }
 
   function resetBenchPoseLeak(state, group) {
-    if (state.activity === 'bench') return;
+    if (state.activity === 'bench' || group.userData.toonValleyRecoveryTowelActive) return;
     const body = group.getObjectByName('body');
     if (!body || Math.abs(body.rotation.x) <= .001) return;
     body.rotation.x = 0;
