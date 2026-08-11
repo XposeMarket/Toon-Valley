@@ -24,12 +24,19 @@
   const dragonWingGeometry = new THREE.PlaneGeometry(.22, .08);
   const dragonBodyMaterial = new THREE.MeshToonMaterial({ color: 0x31575d });
   const dragonWingMaterials = [0x79dff0, 0xa1f1df, 0x8cbcf4, 0xc3a7f3].map(color => new THREE.MeshBasicMaterial({ color, transparent: true, opacity: .66, side: THREE.DoubleSide, depthWrite: false }));
+  const perchStemGeometry = new THREE.CylinderGeometry(.018, .025, .72, 6);
+  const perchSeedGeometry = new THREE.CylinderGeometry(.045, .04, .22, 7);
+  const perchLeafGeometry = new THREE.PlaneGeometry(.22, .055);
+  const perchStemMaterial = new THREE.MeshToonMaterial({ color: 0x6e8e4f });
+  const perchSeedMaterial = new THREE.MeshToonMaterial({ color: 0x795f3d });
+  const perchLeafMaterial = new THREE.MeshToonMaterial({ color: 0x82a95d, side: THREE.DoubleSide });
 
   const ducks = [];
   const dragonflies = [];
   let elapsed = 0;
   let duckEscapes = 0;
   let duckDabbles = 0;
+  let duckPreens = 0;
   let dragonflyDodges = 0;
   let dragonflyPerches = 0;
 
@@ -43,6 +50,32 @@
   function shorelineFloor(x, z) {
     return Math.max(TV.terrainHeight(x, z), waterY - .12);
   }
+
+  function makeDragonflyPerch(anchor, index) {
+    const group = new THREE.Group();
+    group.name = `bluebell-dragonfly-perch-${index + 1}`;
+    const floor = shorelineFloor(anchor.x, anchor.z);
+    const stemHeight = .66 + index * .035;
+    const stem = new THREE.Mesh(perchStemGeometry, perchStemMaterial);
+    stem.scale.y = stemHeight / .72;
+    stem.position.y = stemHeight * .5;
+    const seed = new THREE.Mesh(perchSeedGeometry, perchSeedMaterial);
+    seed.position.y = stemHeight + .075;
+    const leafA = new THREE.Mesh(perchLeafGeometry, perchLeafMaterial);
+    const leafB = leafA.clone();
+    leafA.position.set(.08, stemHeight * .47, 0);
+    leafA.rotation.z = -.48;
+    leafB.position.set(-.07, stemHeight * .32, .01);
+    leafB.rotation.z = Math.PI + .55;
+    group.add(stem, seed, leafA, leafB);
+    group.position.set(anchor.x, floor, anchor.z);
+    group.rotation.y = index * 1.13;
+    root.add(group);
+    anchor.perchY = floor + stemHeight + .22;
+    anchor.perchName = group.name;
+  }
+
+  dragonAnchors.forEach(makeDragonflyPerch);
 
   function makeDuck(index) {
     const group = new THREE.Group();
@@ -71,6 +104,8 @@
       body,
       head,
       bill,
+      leftWing,
+      rightWing,
       index,
       phase: angle,
       speed: .34,
@@ -81,6 +116,10 @@
       feed: 0,
       feedCooldown: 3.4 + index * 1.35,
       feedCount: 0,
+      preen: 0,
+      preenDuration: 1.05 + index * .08,
+      preenCooldown: 4.8 + index * 1.45,
+      preenCount: 0,
       formationDistance: 0
     });
   }
@@ -132,7 +171,9 @@
     ducks.forEach(member => {
       member.escape = Math.max(member.escape, member === duck ? 2.4 : 1.8);
       member.feed = 0;
+      member.preen = 0;
       member.feedCooldown = Math.max(member.feedCooldown, 2.2);
+      member.preenCooldown = Math.max(member.preenCooldown, 2.7);
     });
     ducks[0].phase += Math.PI * .72;
   }
@@ -141,20 +182,30 @@
     duck.escape = Math.max(0, duck.escape - dt);
     duck.feed = Math.max(0, duck.feed - dt);
     duck.feedCooldown = Math.max(0, duck.feedCooldown - dt);
+    duck.preen = Math.max(0, duck.preen - dt);
+    duck.preenCooldown = Math.max(0, duck.preenCooldown - dt);
 
     if (duck.escape <= 0 && playerDistance2(duck.group.position) < 4.3 * 4.3) alertDuckFamily(duck);
 
-    if (duck.escape <= 0 && duck.feed <= 0 && duck.feedCooldown <= 0) {
+    if (duck.escape <= 0 && duck.feed <= 0 && duck.preen <= 0 && duck.feedCooldown <= 0) {
       duck.feed = 1.25 + duck.index * .08;
       duck.feedCooldown = 5.4 + duck.index * 1.15;
+      duck.preenCooldown = Math.max(duck.preenCooldown, 1.6);
       duck.feedCount += 1;
       duckDabbles += 1;
+    } else if (duck.escape <= 0 && duck.feed <= 0 && duck.preen <= 0 && duck.preenCooldown <= 0) {
+      duck.preen = duck.preenDuration;
+      duck.preenCooldown = 6.2 + duck.index * 1.1;
+      duck.feedCooldown = Math.max(duck.feedCooldown, 1.4);
+      duck.preenCount += 1;
+      duckPreens += 1;
     }
 
     let desiredX;
     let desiredZ;
     if (duck.index === 0) {
-      const boost = duck.escape > 0 ? 2.35 : (duck.feed > 0 ? .18 : 1);
+      const resting = duck.feed > 0 || duck.preen > 0;
+      const boost = duck.escape > 0 ? 2.35 : (resting ? .18 : 1);
       duck.phase += dt * duck.speed * boost;
       desiredX = LAKE.x + Math.cos(duck.phase) * (LAKE.rx * .38);
       desiredZ = LAKE.z + Math.sin(duck.phase * .92) * (LAKE.rz * .34);
@@ -178,14 +229,21 @@
     if (distance > .01) duck.group.rotation.y = Math.atan2(dx, dz);
 
     const feedPose = duck.feed > 0 ? Math.sin(Math.min(1, (1.25 + duck.index * .08 - duck.feed) / .32) * Math.PI / 2) : 0;
-    duck.head.position.y = .42 - feedPose * .22;
-    duck.head.position.z = .29 + feedPose * .11;
-    duck.bill.position.y = .4 - feedPose * .24;
-    duck.bill.position.z = .48 + feedPose * .08;
+    const preenProgress = duck.preen > 0 ? 1 - duck.preen / duck.preenDuration : 0;
+    const preenPose = duck.preen > 0 ? Math.sin(Math.min(1, preenProgress / .22) * Math.PI / 2) * Math.sin(Math.min(1, (1 - preenProgress) / .22) * Math.PI / 2) : 0;
+    const preenSide = duck.index % 2 === 0 ? 1 : -1;
+    duck.head.position.x = preenSide * preenPose * .19;
+    duck.head.position.y = .42 - feedPose * .22 - preenPose * .08;
+    duck.head.position.z = .29 + feedPose * .11 - preenPose * .16;
+    duck.bill.position.x = preenSide * preenPose * .2;
+    duck.bill.position.y = .4 - feedPose * .24 - preenPose * .09;
+    duck.bill.position.z = .48 + feedPose * .08 - preenPose * .2;
     duck.body.rotation.x = -feedPose * .08;
+    duck.leftWing.rotation.z = preenSide > 0 ? preenPose * .45 : 0;
+    duck.rightWing.rotation.z = preenSide < 0 ? -preenPose * .45 : 0;
 
-    duck.wake.material.opacity = .2 + (duck.escape > 0 ? .34 : duck.feed > 0 ? .02 : .12) + Math.sin(elapsed * 5 + duck.index) * .04;
-    duck.wake.scale.setScalar(duck.escape > 0 ? 1.35 : duck.feed > 0 ? .72 : 1);
+    duck.wake.material.opacity = .2 + (duck.escape > 0 ? .34 : duck.feed > 0 || duck.preen > 0 ? .02 : .12) + Math.sin(elapsed * 5 + duck.index) * .04;
+    duck.wake.scale.setScalar(duck.escape > 0 ? 1.35 : duck.feed > 0 || duck.preen > 0 ? .72 : 1);
   }
 
   function updateDragonfly(dragon, dt) {
@@ -223,7 +281,7 @@
     dragon.group.position.z += (desiredZ - dragon.group.position.z) * follow;
     const ground = shorelineFloor(dragon.group.position.x, dragon.group.position.z);
     const hoverY = ground + 1.05 + Math.sin(elapsed * 4.2 + dragon.phase) * .18 + (dragon.dodge > 0 ? .42 : 0);
-    dragon.group.position.y += ((perched ? ground + .52 : hoverY) - dragon.group.position.y) * Math.min(1, dt * (perched ? 7 : 6));
+    dragon.group.position.y += (((perched && Number.isFinite(anchor.perchY)) ? anchor.perchY : perched ? ground + .52 : hoverY) - dragon.group.position.y) * Math.min(1, dt * (perched ? 7 : 6));
     const moveX = dragon.group.position.x - beforeX;
     const moveZ = dragon.group.position.z - beforeZ;
     if (Math.hypot(moveX, moveZ) > .002) dragon.group.rotation.y = Math.atan2(moveX, moveZ);
@@ -248,8 +306,10 @@
     return {
       duckCount: ducks.length,
       dragonflyCount: dragonflies.length,
+      perchCount: dragonAnchors.length,
       duckEscapes,
       duckDabbles,
+      duckPreens,
       dragonflyDodges,
       dragonflyPerches,
       ducks: ducks.map(duck => ({
@@ -262,6 +322,8 @@
         phase: duck.phase,
         feed: duck.feed,
         feedCount: duck.feedCount,
+        preen: duck.preen,
+        preenCount: duck.preenCount,
         formationDistance: duck.formationDistance
       })),
       dragonflies: dragonflies.map(dragon => ({
@@ -270,6 +332,8 @@
         y: dragon.group.position.y,
         z: dragon.group.position.z,
         anchorIndex: dragon.anchorIndex,
+        perchName: dragonAnchors[dragon.anchorIndex]?.perchName || '',
+        perchY: dragonAnchors[dragon.anchorIndex]?.perchY ?? null,
         dodge: dragon.dodge,
         dodgeCount: dragon.dodgeCount,
         orbitCount: dragon.orbitCount,
@@ -285,8 +349,10 @@
     reactiveWakeEffects: true,
     duckFamilyCohesion: true,
     duckDabbling: true,
+    duckPreening: true,
     shorelineDragonflies: true,
     dragonflyPerching: true,
+    physicalDragonflyPerches: true,
     playerReactiveWildlife: true,
     lowPopulationBudget: true,
     advance,
