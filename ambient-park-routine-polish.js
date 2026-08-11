@@ -44,8 +44,7 @@
       group.add(lamp);
       lights.push(lamp);
     }
-    const y = TV.terrainHeight(spec.x, spec.z);
-    group.position.set(spec.x, y, spec.z);
+    group.position.set(spec.x, TV.terrainHeight(spec.x, spec.z), spec.z);
     group.rotation.y = spec.yaw;
     root.add(group);
     return { ...spec, group, lights, flashes: 0, flashLeft: 0 };
@@ -53,8 +52,8 @@
 
   const paceGates = gateSpecs.map(makePaceGate);
   const lastSegments = new Map();
-  const stationTow els = new Map();
-  const joggerTow els = new Map();
+  const stationTowels = new Map();
+  const joggerTowels = new Map();
   let lapGatePasses = 0;
   let towelRecoverySessions = 0;
   let residualBenchPoseResets = 0;
@@ -63,7 +62,7 @@
   function ensureBenchTowels() {
     for (let i = 0; i < 4; i += 1) {
       const benchName = `sunshine-rest-bench-${i + 1}`;
-      if (stationTow els.has(benchName)) continue;
+      if (stationTowels.has(benchName)) continue;
       const bench = TV.scene.getObjectByName(benchName);
       if (!bench) continue;
       const towel = new THREE.Mesh(new THREE.BoxGeometry(.5, .035, .28), towelMats[i % towelMats.length]);
@@ -71,30 +70,30 @@
       towel.position.set(.46, .63, -.03);
       towel.rotation.z = -.08;
       bench.add(towel);
-      stationTow els.set(benchName, towel);
+      stationTowels.set(benchName, towel);
     }
   }
 
   function ensureJoggerTowel(group, index) {
-    if (joggerTow els.has(group.name)) return joggerTow els.get(group.name);
+    if (joggerTowels.has(group.name)) return joggerTowels.get(group.name);
     const towel = new THREE.Mesh(new THREE.BoxGeometry(.38, .035, .22), towelMats[index % towelMats.length]);
     towel.name = 'jogger-recovery-towel';
     towel.visible = false;
     towel.position.set(.2, 1.24, .18);
     group.add(towel);
-    joggerTow els.set(group.name, towel);
+    joggerTowels.set(group.name, towel);
     return towel;
   }
 
   function updatePaceGate(state) {
-    if (state.kind !== 'park-jogger') return;
     if (!lastSegments.has(state.name)) {
       lastSegments.set(state.name, state.completedSegments);
       return;
     }
     const previous = lastSegments.get(state.name);
     if (state.completedSegments > previous && state.routePoints > 0 && state.completedSegments % state.routePoints === 0) {
-      const index = Math.max(0, Math.min(paceGates.length - 1, Number.parseInt(state.name.split('-').pop(), 10) - 1 || 0));
+      const parsed = Number.parseInt(state.name.split('-').pop(), 10);
+      const index = Number.isFinite(parsed) ? Math.max(0, Math.min(paceGates.length - 1, parsed - 1)) : 0;
       const gate = paceGates[index];
       gate.flashes += 1;
       gate.flashLeft = 1.25;
@@ -115,9 +114,9 @@
 
   function updateRecoveryTowel(state, group, index) {
     const towel = ensureJoggerTowel(group, index);
-    const active = state.kind === 'park-jogger' && state.activity === 'bench' && state.pause > 0;
+    const active = state.activity === 'bench' && state.pause > 0;
     const benchName = group.userData.toonValleyRestBench;
-    const stationTowel = benchName ? stationTow els.get(benchName) : null;
+    const stationTowel = benchName ? stationTowels.get(benchName) : null;
     const wasActive = Boolean(group.userData.toonValleyRecoveryTowelActive);
     group.userData.toonValleyRecoveryTowelActive = active;
 
@@ -138,13 +137,11 @@
   }
 
   function resetBenchPoseLeak(state, group) {
-    if (state.kind !== 'park-jogger' || state.activity === 'bench') return;
+    if (state.activity === 'bench') return;
     const body = group.getObjectByName('body');
-    if (!body) return;
-    if (Math.abs(body.rotation.x) > .001) {
-      body.rotation.x = 0;
-      residualBenchPoseResets += 1;
-    }
+    if (!body || Math.abs(body.rotation.x) <= .001) return;
+    body.rotation.x = 0;
+    residualBenchPoseResets += 1;
   }
 
   function advance(dt = 0) {
@@ -170,13 +167,13 @@
   function getState() {
     return {
       paceGateCount: paceGates.length,
-      stationTowelCount: stationTow els.size,
-      joggerTowelCount: joggerTow els.size,
+      stationTowelCount: stationTowels.size,
+      joggerTowelCount: joggerTowels.size,
       lapGatePasses,
       towelRecoverySessions,
       residualBenchPoseResets,
       activeGateFlashes: paceGates.filter(gate => gate.flashLeft > 0).length,
-      activeRecoveryTowels: [...joggerTow els.values()].filter(towel => towel.visible).length,
+      activeRecoveryTowels: [...joggerTowels.values()].filter(towel => towel.visible).length,
       gateFlashCounts: paceGates.map(gate => gate.flashes),
       finitePositions: paceGates.every(gate => Number.isFinite(gate.group.position.x) && Number.isFinite(gate.group.position.y) && Number.isFinite(gate.group.position.z))
     };
