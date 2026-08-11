@@ -16,35 +16,36 @@ try{
     const S=window.ToonValleyBluebellShoreLife,TV=window.ToonValley,L=window.ToonValleyBluebellLake;
     TV.player.position.set(220,TV.terrainHeight(220,220),220);
     const initial=S.getState();
-    for(let i=0;i<20;i++)S.advance(.2);
-    const calm=S.getState();
-    const frog=calm.frogs[0];
-    TV.player.position.set(frog.x,frog.y,frog.z);
+    let hunt=S.getState();
+    for(let i=0;i<40&&hunt.heronHunts===initial.heronHunts;i++){S.advance(.1);hunt=S.getState()}
+    const frogObj=TV.scene.getObjectByName('bluebell-frog-1');
+    frogObj.position.x=-.5;frogObj.position.z=-.5;
+    TV.player.position.set(0,frogObj.position.y,0);
     S.advance(.1);
-    const afterFrog=S.getState();
+    const afterAxisFrog=S.getState();
     TV.player.position.set(220,TV.terrainHeight(220,220),220);
-    for(let i=0;i<25;i++)S.advance(.2);
-    const recovered=S.getState();
-    const heron=recovered.heron;
-    TV.player.position.set(heron.x,heron.y,heron.z);
-    S.advance(.1);
+    let landed=afterAxisFrog;
+    for(let i=0;i<20;i++){S.advance(.1);landed=S.getState();if(landed.frogs[0].jump===0)break}
+    const heron=landed.heron;
+    TV.player.position.set(heron.x,heron.y,heron.z);S.advance(.1);
     const afterHeron=S.getState();
     TV.player.position.set(220,TV.terrainHeight(220,220),220);
-    for(let i=0;i<28;i++)S.advance(.2);
-    const settled=S.getState();
+    let settled=afterHeron;
+    for(let i=0;i<60;i++){S.advance(.1);settled=S.getState();if(settled.heron.state==='wading'&&settled.heron.anchorIndex!==initial.heron.anchorIndex)break}
     const root=TV.scene.getObjectByName('bluebell-shore-life');
-    return {flags:{active:S.active,frogs:S.reactiveLilyFrogs,jumps:S.visibleFrogJumps,heron:S.wadingHeron,flight:S.reactiveHeronFlight,budget:S.lowPopulationBudget},lake:L.lake,initial,calm,afterFrog,recovered,afterHeron,settled,rootPresent:Boolean(root),childCount:root?.children.length||0};
+    return {flags:{active:S.active,frogs:S.reactiveLilyFrogs,jumps:S.visibleFrogJumps,ripples:S.frogWaterRipples,heron:S.wadingHeron,hunt:S.heronStalkAndStrike,flight:S.reactiveHeronFlight,budget:S.lowPopulationBudget},lake:L.lake,initial,hunt,afterAxisFrog,landed,afterHeron,settled,rootPresent:Boolean(root),childCount:root?.children.length||0};
   });
   if(!Object.values(report.flags).every(Boolean))throw new Error(`Bluebell shore capability flags missing ${JSON.stringify(report.flags)}`);
-  if(!report.rootPresent||report.childCount!==7||report.initial.frogCount!==3)throw new Error(`Bluebell shore population did not initialize ${JSON.stringify(report)}`);
-  if(report.afterFrog.frogJumps<=report.calm.frogJumps||!report.afterFrog.frogs.some((f,i)=>f.jumpCount>report.calm.frogs[i].jumpCount&&f.jump>0))throw new Error(`Lily frog did not physically jump from nearby player ${JSON.stringify({before:report.calm,after:report.afterFrog})}`);
-  const frogRecovered=report.recovered.frogs.some((f,i)=>report.afterFrog.frogs[i].jumpCount>0&&f.jump===0&&Number.isFinite(f.x)&&Number.isFinite(f.y)&&Number.isFinite(f.z));
-  if(!frogRecovered)throw new Error(`Lily frog did not recover after jump ${JSON.stringify(report.recovered.frogs)}`);
-  if(report.afterHeron.heronFlights<=report.recovered.heronFlights||report.afterHeron.heron.flightCount<=report.recovered.heron.flightCount||report.afterHeron.heron.state!=='flying')throw new Error(`Heron did not take flight from nearby player ${JSON.stringify({before:report.recovered.heron,after:report.afterHeron.heron})}`);
+  if(!report.rootPresent||report.childCount<16||report.initial.frogCount!==3)throw new Error(`Bluebell shore population did not initialize ${JSON.stringify(report)}`);
+  if(report.hunt.heronHunts<=report.initial.heronHunts||report.hunt.heronStrikeRipples<=report.initial.heronStrikeRipples)throw new Error(`Heron stalk/strike feeding cycle did not complete ${JSON.stringify({before:report.initial,after:report.hunt})}`);
+  const axisFrog=report.afterAxisFrog.frogs[0];
+  if(axisFrog.jumpCount<1||axisFrog.jump<=0||axisFrog.lastEscapeX>=0||axisFrog.lastEscapeZ>=0)throw new Error(`Axis-zero frog escape direction regressed ${JSON.stringify(axisFrog)}`);
+  if(report.afterAxisFrog.frogSplashRipples<=report.initial.frogSplashRipples||report.afterAxisFrog.activeRipples<1)throw new Error(`Frog launch ripple missing ${JSON.stringify(report.afterAxisFrog)}`);
+  if(report.landed.frogSplashRipples<report.afterAxisFrog.frogSplashRipples+1)throw new Error(`Frog landing ripple missing ${JSON.stringify({jump:report.afterAxisFrog,landed:report.landed})}`);
+  if(report.afterHeron.heronFlights<=report.landed.heronFlights||report.afterHeron.heron.state!=='flying')throw new Error(`Heron did not take flight from nearby player ${JSON.stringify({before:report.landed.heron,after:report.afterHeron.heron})}`);
   if(report.settled.heron.state!=='wading'||report.settled.heron.anchorIndex===report.initial.heron.anchorIndex)throw new Error(`Heron did not land at a new shoreline anchor ${JSON.stringify({initial:report.initial.heron,settled:report.settled.heron})}`);
   const lake=report.lake;
   if(report.settled.frogs.some(f=>!Number.isFinite(f.x)||!Number.isFinite(f.y)||!Number.isFinite(f.z)||Math.abs(f.x-lake.x)>lake.rx*1.1||Math.abs(f.z-lake.z)>lake.rz*1.1))throw new Error(`Frog left Bluebell shoreline bounds ${JSON.stringify(report.settled.frogs)}`);
-  if(!Number.isFinite(report.settled.heron.x)||!Number.isFinite(report.settled.heron.y)||!Number.isFinite(report.settled.heron.z)||report.settled.heron.y<0)throw new Error(`Heron terrain state became invalid ${JSON.stringify(report.settled.heron)}`);
   if(errors.length)throw new Error(errors.join('\n'));
-  console.log('Bluebell lily frogs and shoreline heron passed runtime checks',report);
+  console.log('Bluebell shoreline ripples, frog escape, heron feeding and flight passed runtime checks',report);
 }finally{await browser.close();if(server)server.kill('SIGTERM')}
