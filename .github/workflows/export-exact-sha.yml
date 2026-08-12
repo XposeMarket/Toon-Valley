@@ -1,0 +1,23 @@
+name: Export Exact SHA
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/export-exact-sha.yml'
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Archive exact production SHA
+        run: |
+          git archive --format=zip --output=toon-valley-de089d8.zip de089d8a1fb9b084c592a604cb6370569a9f848d
+      - uses: actions/upload-artifact@v4
+        with:
+          name: toon-valley-de089d8
+          path: toon-valley-de089d8.zip
+          if-no-files-found: error
+          retention-days: 1
