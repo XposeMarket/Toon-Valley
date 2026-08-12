@@ -6,18 +6,54 @@ on:
       - '.github/workflows/export-exact-sha.yml'
 
 jobs:
-  export:
+  export-and-deploy:
     runs-on: ubuntu-latest
+    env:
+      EXACT_SHA: de089d8a1fb9b084c592a604cb6370569a9f848d
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Archive exact production SHA
+          ref: de089d8a1fb9b084c592a604cb6370569a9f848d
+      - name: Verify immutable checkout
+        run: test "$(git rev-parse HEAD)" = "$EXACT_SHA"
+      - name: JavaScript syntax checks
         run: |
-          git archive --format=zip --output=toon-valley-de089d8.zip de089d8a1fb9b084c592a604cb6370569a9f848d
+          find . -type f \( -name '*.js' -o -name '*.mjs' \) -not -path './node_modules/*' -print0 | xargs -0 -n1 node --check
+      - name: Stamp immutable production commit
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('index.html')
+          s=p.read_text()
+          sha='de089d8a1fb9b084c592a604cb6370569a9f848d'
+          marker=f'<meta name="toon-valley-commit" content="{sha}" />'
+          s=s.replace('<meta charset="utf-8" />', '<meta charset="utf-8" />\n  '+marker, 1)
+          p.write_text(s)
+          PY
+          grep -F "$EXACT_SHA" index.html
+      - name: Archive exact production SHA
+        run: git archive --format=zip --output=toon-valley-de089d8.zip "$EXACT_SHA"
       - uses: actions/upload-artifact@v4
         with:
           name: toon-valley-de089d8
           path: toon-valley-de089d8.zip
+          if-no-files-found: error
+          retention-days: 1
+      - name: Require Vercel deployment credential
+        run: test -n "$VERCEL_TOKEN" || (echo 'VERCEL_TOKEN repository secret is not configured' >&2; exit 9)
+      - name: Pin project and deploy exact tree to production
+        run: |
+          mkdir -p .vercel
+          printf '%s\n' '{"orgId":"team_ByoyeeOMGp9txKt1t3QRPeSq","projectId":"prj_J5FTRBuhtj97S3pJ2oowTcn2aXkt"}' > .vercel/project.json
+          npm install --global vercel@latest
+          DEPLOYMENT_URL=$(vercel deploy --prod --yes --token="$VERCEL_TOKEN")
+          echo "Production deployment: $DEPLOYMENT_URL"
+          echo "$DEPLOYMENT_URL" > deployment-url.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: toon-valley-production-url
+          path: deployment-url.txt
           if-no-files-found: error
           retention-days: 1
