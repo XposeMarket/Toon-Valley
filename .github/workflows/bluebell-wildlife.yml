@@ -12,7 +12,7 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 14
+    timeout-minutes: 16
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -21,8 +21,10 @@ jobs:
       - name: Syntax checks
         run: |
           node --check bluebell-wildlife.js
+          node --check bluebell-wildlife-polish.js
           node --check bluebell-shore-life.js
           node --check tests/bluebell-wildlife-runtime.mjs
+          node --check tests/bluebell-wildlife-polish-runtime.mjs
           node --check tests/bluebell-shore-life-runtime.mjs
       - name: Install browser runtime
         run: |
@@ -30,6 +32,8 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Local Bluebell wildlife runtime
         run: timeout 150s node tests/bluebell-wildlife-runtime.mjs
+      - name: Local Bluebell wildlife polish runtime
+        run: timeout 150s node tests/bluebell-wildlife-polish-runtime.mjs
       - name: Local Bluebell shoreline life runtime
         run: timeout 150s node tests/bluebell-shore-life-runtime.mjs
       - name: Production Bluebell wildlife runtime
@@ -37,6 +41,11 @@ jobs:
         env:
           BASE_URL: https://toon-valley.vercel.app
         run: timeout 150s node tests/bluebell-wildlife-runtime.mjs
+      - name: Production Bluebell wildlife polish runtime
+        if: github.event_name == 'push'
+        env:
+          BASE_URL: https://toon-valley.vercel.app
+        run: timeout 150s node tests/bluebell-wildlife-polish-runtime.mjs
       - name: Production Bluebell shoreline life runtime
         if: github.event_name == 'push'
         env:
