@@ -36,8 +36,12 @@
   let perchResponses = 0;
   let familyWatchResponses = 0;
   let watchCorrections = 0;
+  let cautiousRetreats = 0;
+  let retreatCorrections = 0;
+  let watchExposure = 0;
   let dragonflyPairChases = 0;
   let chaseCorrections = 0;
+  let chaseTargetJinks = 0;
   let chaseCooldown = 2.2;
   let activeChase = null;
   let poll = 0;
@@ -123,11 +127,18 @@
     const adult = duckGroups[0];
     const player = TV.player?.position;
     const adultState = cached.ducks?.[0];
-    if (!adult || !player || !adultState || adultState.escape > 0) return;
+    if (!adult || !player || !adultState || adultState.escape > 0) {
+      watchExposure = Math.max(0, watchExposure - dt * 2);
+      return;
+    }
     const dx = player.x - adult.position.x;
     const dz = player.z - adult.position.z;
     const distance = Math.hypot(dx, dz);
-    if (distance < 4.7 || distance > 8.2) return;
+    if (distance < 4.7 || distance > 8.2) {
+      watchExposure = Math.max(0, watchExposure - dt * 2);
+      return;
+    }
+    watchExposure = Math.min(2.4, watchExposure + dt);
     const targetYaw = Math.atan2(dx, dz);
     let delta = targetYaw - adult.rotation.y;
     delta = Math.atan2(Math.sin(delta), Math.cos(delta));
@@ -135,6 +146,14 @@
     adult.rotation.y += turn;
     watchCorrections += 1;
     if (Math.abs(turn) > .002) familyWatchResponses += 1;
+
+    if (watchExposure > .85 && distance > .001) {
+      const retreatStrength = Math.min(.055, dt * (.12 + (watchExposure - .85) * .08));
+      adult.position.x -= dx / distance * retreatStrength;
+      adult.position.z -= dz / distance * retreatStrength;
+      retreatCorrections += 1;
+      if (retreatCorrections === 1 || retreatCorrections % 12 === 0) cautiousRetreats += 1;
+    }
 
     for (let i = 1; i < duckGroups.length; i++) {
       const duck = duckGroups[i];
@@ -144,8 +163,9 @@
       const gx = guide.position.x - duck.position.x;
       const gz = guide.position.z - duck.position.z;
       const gap = Math.hypot(gx, gz);
-      if (gap <= .82 || gap < .001) continue;
-      const correction = Math.min(.045, dt * .12);
+      const desiredGap = watchExposure > .85 ? .68 : .82;
+      if (gap <= desiredGap || gap < .001) continue;
+      const correction = Math.min(watchExposure > .85 ? .06 : .045, dt * (watchExposure > .85 ? .18 : .12));
       duck.position.x += gx / gap * correction;
       duck.position.z += gz / gap * correction;
       watchCorrections += 1;
@@ -156,6 +176,7 @@
     chaseCooldown = Math.max(0, chaseCooldown - dt);
     if (activeChase) {
       activeChase.life = Math.max(0, activeChase.life - dt);
+      activeChase.elapsed += dt;
       const chaser = dragonGroups[activeChase.chaser];
       const target = dragonGroups[activeChase.target];
       const chaserState = cached.dragonflies?.[activeChase.chaser];
@@ -174,6 +195,15 @@
           chaser.position.y += (target.position.y + .12 - chaser.position.y) * Math.min(1, dt * 2.8);
           chaser.rotation.y = Math.atan2(dx, dz);
           chaseCorrections += 1;
+
+          const side = activeChase.side;
+          const jinkWave = Math.sin(activeChase.elapsed * 7.2 + activeChase.target) * .5 + .5;
+          const jink = Math.min(.045, dt * (.11 + jinkWave * .12));
+          target.position.x += (-dz / distance) * jink * side;
+          target.position.z += (dx / distance) * jink * side;
+          target.position.y += Math.sin(activeChase.elapsed * 8 + activeChase.target) * dt * .055;
+          target.rotation.y = Math.atan2(dx, dz) + side * .38;
+          chaseTargetJinks += 1;
         }
         if (activeChase.life <= 0 || distance < .38) {
           activeChase = null;
@@ -191,7 +221,7 @@
         const chaser = airborne[seed].index;
         let target = airborne[(seed + 1) % airborne.length].index;
         if (target === chaser) target = airborne[(seed + 2) % airborne.length].index;
-        activeChase = { chaser, target, life: 1.45 };
+        activeChase = { chaser, target, life: 1.45, elapsed: 0, side: dragonflyPairChases % 2 === 0 ? 1 : -1 };
         dragonflyPairChases += 1;
       } else {
         chaseCooldown = .8;
@@ -246,9 +276,13 @@
       perchResponses,
       familyWatchResponses,
       watchCorrections,
+      cautiousRetreats,
+      retreatCorrections,
+      watchExposure,
       adultWatchYaw: duckGroups[0]?.rotation.y ?? null,
       dragonflyPairChases,
       chaseCorrections,
+      chaseTargetJinks,
       chaseActive: Boolean(activeChase),
       perchDeflections: perchObjects.map(p => p?.rotation.z ?? null)
     };
@@ -264,7 +298,9 @@
     continuousSwimWakeTrails: true,
     ducklingRegroupAssist: true,
     familyWatchfulness: true,
+    cautiousFamilyRetreat: true,
     dragonflyPairChases: true,
+    dragonflyEvasiveJinks: true,
     reactivePerchSway: true,
     lowAllocationPool: true,
     advance,
