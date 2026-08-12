@@ -18,6 +18,17 @@ try{
     const before=P.getState();
     for(let i=0;i<55;i++){W.advance(.2);P.advance(.2)}
     const afterCruise=P.getState();
+
+    const root=TV.scene.getObjectByName('bluebell-wildlife');
+    const duck2=root?.getObjectByName('bluebell-duck-2');
+    const duck1=root?.getObjectByName('bluebell-duck-1');
+    if(duck2&&duck1) duck2.position.set(duck1.position.x+5,duck2.position.y,duck1.position.z+5);
+    W.advance(.12);
+    const beforeRegroup=duck2&&duck1?Math.hypot(duck2.position.x-duck1.position.x,duck2.position.z-duck1.position.z):null;
+    for(let i=0;i<5;i++)P.advance(.12);
+    const afterRegroup=duck2&&duck1?Math.hypot(duck2.position.x-duck1.position.x,duck2.position.z-duck1.position.z):null;
+    const afterRegroupState=P.getState();
+
     const duck=W.getState().ducks[0];
     TV.player.position.set(duck.x,duck.y,duck.z);
     W.advance(.1);P.advance(.13);
@@ -25,16 +36,18 @@ try{
     TV.player.position.set(220,TV.terrainHeight(220,220),220);
     for(let i=0;i<8;i++){W.advance(.1);P.advance(.1)}
     const afterRipple=P.getState();
-    const root=TV.scene.getObjectByName('bluebell-wildlife-ripple-pool');
-    return {flags:{active:P.active,ageMix:P.duckFamilyAgeMix,pool:P.pooledWaterRipples,dabble:P.dabbleWaterResponse,escape:P.escapeWaterResponse,perch:P.reactivePerchSway,lowAllocation:P.lowAllocationPool},before,afterCruise,afterEscape,afterRipple,rootPresent:Boolean(root),poolChildren:root?.children.length||0};
+    const rippleRoot=TV.scene.getObjectByName('bluebell-wildlife-ripple-pool');
+    return {flags:{active:P.active,ageMix:P.duckFamilyAgeMix,pool:P.pooledWaterRipples,dabble:P.dabbleWaterResponse,escape:P.escapeWaterResponse,familyEscape:P.familyEscapeWaterResponse,wakes:P.continuousSwimWakeTrails,regroup:P.ducklingRegroupAssist,perch:P.reactivePerchSway,lowAllocation:P.lowAllocationPool},before,afterCruise,beforeRegroup,afterRegroup,afterRegroupState,afterEscape,afterRipple,rootPresent:Boolean(rippleRoot),poolChildren:rippleRoot?.children.length||0};
   });
   if(!Object.values(report.flags).every(Boolean))throw new Error(`Bluebell wildlife polish capability flags missing ${JSON.stringify(report.flags)}`);
   if(!report.rootPresent||report.poolChildren!==12||report.before.ripplePoolSize!==12)throw new Error(`Pooled wildlife ripple system did not initialize ${JSON.stringify(report)}`);
   if(!report.before.duckFamilyAgeMix||report.before.duckScales.length!==3||Math.abs(report.before.duckScales[0]-1)>.01||report.before.duckScales[1]>=.8||report.before.duckScales[2]>=.8)throw new Error(`Duck family age/size hierarchy is missing ${JSON.stringify(report.before.duckScales)}`);
   if(report.afterCruise.dabbleRipples<1||report.afterCruise.ripplesEmitted<1)throw new Error(`Duck dabbling did not produce physical water ripples ${JSON.stringify(report.afterCruise)}`);
-  if(report.afterEscape.escapeRipples<=report.afterCruise.escapeRipples||report.afterEscape.activeRippleCount<1)throw new Error(`Duck escape did not produce a visible water response ${JSON.stringify({before:report.afterCruise,after:report.afterEscape})}`);
+  if(report.afterCruise.wakeRipples<2)throw new Error(`Swimming ducks did not leave continuous pooled wake trails ${JSON.stringify(report.afterCruise)}`);
+  if(!Number.isFinite(report.beforeRegroup)||!Number.isFinite(report.afterRegroup)||report.afterRegroup>=report.beforeRegroup||report.afterRegroupState.regroupCorrections<1)throw new Error(`Lagging duckling did not receive physical regroup assistance ${JSON.stringify({before:report.beforeRegroup,after:report.afterRegroup,state:report.afterRegroupState})}`);
+  if(report.afterEscape.familyEscapeBursts<1||report.afterEscape.escapeRipples-report.afterRegroupState.escapeRipples<3||report.afterEscape.activeRippleCount<1)throw new Error(`Duck family escape did not produce a whole-family water response ${JSON.stringify({before:report.afterRegroupState,after:report.afterEscape})}`);
   if(report.afterCruise.perchResponses<1||report.afterCruise.perchDeflections.every(v=>!Number.isFinite(v)||Math.abs(v)<.0001))throw new Error(`Dragonfly landings did not drive physical perch sway ${JSON.stringify(report.afterCruise)}`);
   if(report.afterRipple.activeRippleCount>=report.afterEscape.activeRippleCount&&report.afterRipple.activeRippleCount!==0)throw new Error(`Water ripple pool did not decay/recycle ${JSON.stringify({escape:report.afterEscape,after:report.afterRipple})}`);
   if(errors.length)throw new Error(errors.join('\n'));
-  console.log('Bluebell duckling age mix, pooled dabble/escape ripples, and reactive dragonfly perch sway passed runtime checks',report);
+  console.log('Bluebell duckling regroup assistance, continuous swim wakes, family escape ripples, age mix, and reactive perch sway passed runtime checks',report);
 }finally{await browser.close();if(server)server.kill('SIGTERM')}
