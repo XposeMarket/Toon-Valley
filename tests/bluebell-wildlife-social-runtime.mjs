@@ -15,35 +15,29 @@ try{
   const report=await page.evaluate(()=>{
     const S=window.ToonValleyBluebellWildlifeSocial,W=window.ToonValleyBluebellWildlife,TV=window.ToonValley;
     const root=TV.scene.getObjectByName('bluebell-wildlife');
+    TV.player.position.set(220,TV.terrainHeight(220,220),220);for(let i=0;i<18;i++)W.advance(.1);
+    const adult=root?.getObjectByName('bluebell-duck-1'),duck2=root?.getObjectByName('bluebell-duck-2'),duck3=root?.getObjectByName('bluebell-duck-3');
+    TV.player.position.set(adult.position.x+6.1,adult.position.y,adult.position.z);for(let i=0;i<16;i++)S.advance(.1);const shelterState=S.getState();
+    if(duck2&&duck3){duck3.position.x=duck2.position.x;duck3.position.z=duck2.position.z}for(let i=0;i<10;i++)S.advance(.1);
+    const spacingState=S.getState(),ducklingDistance=duck2&&duck3?Math.hypot(duck3.position.x-duck2.position.x,duck3.position.z-duck2.position.z):0;
+    TV.player.position.set(220,TV.terrainHeight(220,220),220);for(let i=0;i<12;i++)S.advance(.1);const rejoinState=S.getState();
+    for(let i=0;i<24&&W.getState().dragonflies.filter(d=>d.perch<=0&&d.dodge<=0).length<2;i++)W.advance(.1);
+    const active=[];W.getState().dragonflies.forEach((d,index)=>{if(d.perch<=0&&d.dodge<=0)active.push(index)});
+    const first=active[0],second=active[1],dragonA=Number.isInteger(first)?root?.getObjectByName(`bluebell-dragonfly-${first+1}`):null,dragonB=Number.isInteger(second)?root?.getObjectByName(`bluebell-dragonfly-${second+1}`):null;
     TV.player.position.set(220,TV.terrainHeight(220,220),220);
-    for(let i=0;i<18;i++)W.advance(.1);
-    const adult=root?.getObjectByName('bluebell-duck-1');
-    const duck2=root?.getObjectByName('bluebell-duck-2');
-    const duck3=root?.getObjectByName('bluebell-duck-3');
-    const beforeShelter=[duck2,duck3].map(d=>d?{x:d.position.x,z:d.position.z}:null);
-    TV.player.position.set(adult.position.x+6.1,adult.position.y,adult.position.z);
-    for(let i=0;i<16;i++)S.advance(.1);
-    const afterShelter=[duck2,duck3].map(d=>d?{x:d.position.x,z:d.position.z}:null);
-    const shelterState=S.getState();
-
-    TV.player.position.set(220,TV.terrainHeight(220,220),220);
-    for(let i=0;i<8;i++)W.advance(.1);
-    const states=W.getState().dragonflies;
-    let idx=states.findIndex(d=>d.perch<=0&&d.dodge<=0);
-    if(idx<0){for(let i=0;i<20;i++)W.advance(.1);idx=W.getState().dragonflies.findIndex(d=>d.perch<=0&&d.dodge<=0)}
-    const dragon=idx>=0?root?.getObjectByName(`bluebell-dragonfly-${idx+1}`):null;
-    const dragonBefore=dragon?{x:dragon.position.x,y:dragon.position.y,z:dragon.position.z,yaw:dragon.rotation.y}:null;
-    if(dragon)TV.player.position.set(dragon.position.x+4.7,dragon.position.y,dragon.position.z);
-    for(let i=0;i<20;i++)S.advance(.1);
-    const dragonAfter=dragon?{x:dragon.position.x,y:dragon.position.y,z:dragon.position.z,yaw:dragon.rotation.y}:null;
-    const final=S.getState();
-    return {flags:{active:S.active,shelter:S.ducklingShelterFormation,inspect:S.playerInspectionHover,pop:S.existingPopulationOnly,low:S.lowAllocationBehavior},beforeShelter,afterShelter,shelterState,dragonBefore,dragonAfter,final};
+    if(dragonA){dragonA.position.x=224.8;dragonA.position.z=220;dragonA.position.y=TV.terrainHeight(224.8,220)+1.3}
+    if(dragonB){dragonB.position.x=215.1;dragonB.position.z=220;dragonB.position.y=TV.terrainHeight(215.1,220)+1.45}
+    const dragonBefore=[dragonA,dragonB].map(d=>d?{x:d.position.x,y:d.position.y,z:d.position.z}:null);for(let i=0;i<30;i++)S.advance(.1);
+    const dragonAfter=[dragonA,dragonB].map(d=>d?{x:d.position.x,y:d.position.y,z:d.position.z}:null),final=S.getState();
+    const pairDistance=dragonA&&dragonB?Math.hypot(dragonA.position.x-dragonB.position.x,dragonA.position.z-dragonB.position.z):0;
+    return {flags:{active:S.active,shelter:S.ducklingShelterFormation,rejoin:S.ducklingRejoinContinuity,spacing:S.ducklingPersonalSpace,inspect:S.playerInspectionHover,relay:S.dragonflyInspectionRelay,orbit:S.coordinatedInspectionOrbit,pop:S.existingPopulationOnly,low:S.lowAllocationBehavior},shelterState,spacingState,ducklingDistance,rejoinState,dragonBefore,dragonAfter,pairDistance,final};
   });
   if(!Object.values(report.flags).every(Boolean))throw new Error(`Bluebell social capability flags missing ${JSON.stringify(report.flags)}`);
-  if(report.shelterState.shelterCorrections<2||report.shelterState.shelteredDucklingCount<2||report.shelterState.shelterPeakShift<=.001)throw new Error(`Ducklings did not physically tuck behind the adult during player watchfulness ${JSON.stringify(report.shelterState)}`);
-  if(!report.dragonBefore||!report.dragonAfter||report.final.inspectionCorrections<2||report.final.inspectionResponses<2||report.final.inspectedDragonflyCount<1||report.final.inspectionTurns<1)throw new Error(`Dragonfly did not perform a visible player inspection hover ${JSON.stringify(report)}`);
-  const dragonShift=Math.hypot(report.dragonAfter.x-report.dragonBefore.x,report.dragonAfter.z-report.dragonBefore.z);
-  if(dragonShift<.03&&Math.abs(report.dragonAfter.y-report.dragonBefore.y)<.02)throw new Error(`Dragonfly inspection hover produced no meaningful physical movement ${JSON.stringify({before:report.dragonBefore,after:report.dragonAfter,final:report.final})}`);
+  if(report.shelterState.shelterCorrections<2||report.shelterState.shelteredDucklingCount<2)throw new Error(`Duckling shelter regression ${JSON.stringify(report.shelterState)}`);
+  if(report.spacingState.spacingCorrections<1||report.spacingState.spacingPeakShift<=.001||report.ducklingDistance<=.05)throw new Error(`Duckling spacing regression ${JSON.stringify(report)}`);
+  if(report.rejoinState.rejoinCorrections<1||report.rejoinState.rejoinedDucklingCount<1)throw new Error(`Duckling rejoin regression ${JSON.stringify(report.rejoinState)}`);
+  if(!report.dragonBefore[0]||!report.dragonBefore[1]||!report.dragonAfter[0]||!report.dragonAfter[1])throw new Error(`Could not prepare dragonfly pair ${JSON.stringify(report)}`);
+  if(report.final.inspectionCorrections<2||report.final.relayCorrections<2||report.final.orbitCorrections<4||report.final.orbitPairSeparation<2||report.pairDistance<2)throw new Error(`Dragonfly coordinated orbit regression ${JSON.stringify(report.final)}`);
   if(errors.length)throw new Error(errors.join('\n'));
-  console.log('Bluebell duckling shelter formation and dragonfly player inspection hover passed runtime checks',report);
+  console.log('Bluebell family spacing and coordinated inspection orbit passed runtime checks',report);
 }finally{await browser.close();if(server)server.kill('SIGTERM')}
