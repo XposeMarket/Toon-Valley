@@ -19,18 +19,20 @@ try{
     const duck2=root?.getObjectByName('bluebell-duck-2');
     const duck3=root?.getObjectByName('bluebell-duck-3');
     if(!adult||!duck2||!duck3)throw new Error('Bluebell duck family missing');
-    const duck=W.getState().ducks[0];
-    TV.player.position.set(duck.x+6.2,duck.y,duck.z);
-    duck2.position.set(adult.position.x+2.2,duck2.position.y,adult.position.z+1.8);
-    duck3.position.set(adult.position.x-2.1,duck3.position.y,adult.position.z+1.7);
-    W.advance(.12);P.advance(.12);S.advance(.12);
+
+    // Keep every family member outside the base flee radius while deliberately
+    // spreading the ducklings so the watchful shelter correction is measurable.
+    TV.player.position.set(adult.position.x+6.2,adult.position.y,adult.position.z);
+    duck2.position.set(adult.position.x-2.4,duck2.position.y,adult.position.z+2.0);
+    duck3.position.set(adult.position.x-2.3,duck3.position.y,adult.position.z-2.1);
+    P.advance(.12);S.advance(.12);
     const shelterBefore=S.getState();
-    for(let i=0;i<18;i++){W.advance(.1);P.advance(.1);S.advance(.1)}
+    for(let i=0;i<20;i++){P.advance(.1);S.advance(.1)}
     const shelterAfter=S.getState();
 
     TV.player.position.set(220,TV.terrainHeight(220,220),220);
     const chaseBefore=S.getState();
-    for(let i=0;i<95;i++){W.advance(.1);P.advance(.1);S.advance(.1)}
+    for(let i=0;i<120;i++){W.advance(.1);P.advance(.1);S.advance(.1)}
     const chaseAfter=S.getState();
     return {flags:{active:S.active,shelter:S.ducklingShelterFormation,separation:S.postChaseSeparationClimb},shelterBefore,shelterAfter,chaseBefore,chaseAfter};
   });
