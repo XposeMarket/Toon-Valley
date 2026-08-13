@@ -37,13 +37,14 @@
     ];
   }
 
-  function applyDucklingShelter(dt, polishState) {
-    const adultState = W.getState().ducks?.[0];
+  function applyDucklingShelter(dt, polishState, wildlifeState) {
+    const states = wildlifeState.ducks || [];
+    const adultState = states[0];
     if (!ducks[0] || ducks.length < 3 || adultState?.escape > 0 || polishState.watchExposure < .85) return;
     const targets = shelterTargets();
     targets.forEach((target, index) => {
       const duck = ducks[index + 1];
-      const state = W.getState().ducks?.[index + 1];
+      const state = states[index + 1];
       if (!duck || state?.escape > 0) return;
       const dx = target.x - duck.position.x;
       const dz = target.z - duck.position.z;
@@ -59,10 +60,12 @@
     });
   }
 
-  function beginPostChaseSeparation() {
+  function beginPostChaseSeparation(wildlifeState) {
     if (dragons.length < 2) return;
+    const states = wildlifeState.dragonflies || [];
     const ranked = dragons
-      .map((dragon, index) => ({ index, bank: Math.abs(dragon.rotation.z || 0) }))
+      .map((dragon, index) => ({ index, bank: Math.abs(dragon.rotation.z || 0), state: states[index] }))
+      .filter(({ state }) => state && state.perch <= 0 && state.dodge <= 0)
       .sort((a, b) => b.bank - a.bank)
       .slice(0, 2);
     if (ranked.length < 2) return;
@@ -86,9 +89,9 @@
     postChaseSeparations += 1;
   }
 
-  function updatePostChaseSeparation(dt, polishState) {
+  function updatePostChaseSeparation(dt, polishState, wildlifeState) {
     const chaseActive = Boolean(polishState.chaseActive);
-    if (previousChaseActive && !chaseActive) beginPostChaseSeparation();
+    if (previousChaseActive && !chaseActive) beginPostChaseSeparation(wildlifeState);
     previousChaseActive = chaseActive;
     if (!separationBurst) return;
 
@@ -96,7 +99,7 @@
     const t = separationBurst.life / .85;
     separationBurst.indices.forEach((index, slot) => {
       const dragon = dragons[index];
-      const state = W.getState().dragonflies?.[index];
+      const state = wildlifeState.dragonflies?.[index];
       if (!dragon || state?.perch > 0 || state?.dodge > 0) return;
       const sign = slot === 0 ? 1 : -1;
       const sideStep = Math.min(.04, dt * (.12 + t * .14));
@@ -115,8 +118,9 @@
   function advance(dt = 0) {
     const safeDt = Math.max(0, Math.min(.25, Number(dt) || 0));
     const polishState = P.getState();
-    applyDucklingShelter(safeDt, polishState);
-    updatePostChaseSeparation(safeDt, polishState);
+    const wildlifeState = W.getState();
+    applyDucklingShelter(safeDt, polishState, wildlifeState);
+    updatePostChaseSeparation(safeDt, polishState, wildlifeState);
   }
 
   function getState() {
