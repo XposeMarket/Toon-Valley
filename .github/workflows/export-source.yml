@@ -1,0 +1,20 @@
+name: Export Exact Source
+
+on:
+  push:
+    branches:
+      - automation/export-final-493b175a
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 493b175a1759b24f5829d7b32371094c7b3b5e8a
+      - uses: actions/upload-artifact@v4
+        with:
+          name: toon-valley-493b175a1759b24f5829d7b32371094c7b3b5e8a
+          path: .
+          include-hidden-files: true
+          retention-days: 1
