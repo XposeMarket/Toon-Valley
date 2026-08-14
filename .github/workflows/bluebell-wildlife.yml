@@ -27,12 +27,14 @@ jobs:
           node --check bluebell-shore-life.js
           node --check bluebell-marsh-life.js
           node --check bluebell-ecosystem-links.js
+          node --check bluebell-marsh-social.js
           node --check tests/bluebell-wildlife-runtime.mjs
           node --check tests/bluebell-wildlife-polish-runtime.mjs
           node --check tests/bluebell-wildlife-social-runtime.mjs
           node --check tests/bluebell-wildlife-cohesion-runtime.mjs
           node --check tests/bluebell-shore-life-runtime.mjs
           node --check tests/bluebell-ecosystem-links-runtime.mjs
+          node --check tests/bluebell-marsh-social-runtime.mjs
       - name: Install browser runtime
         run: |
           npm install --no-save playwright@1.55.0
@@ -49,6 +51,8 @@ jobs:
         run: timeout 150s node tests/bluebell-shore-life-runtime.mjs
       - name: Local Bluebell ecosystem links runtime
         run: timeout 150s node tests/bluebell-ecosystem-links-runtime.mjs
+      - name: Local Bluebell marsh social runtime
+        run: timeout 150s node tests/bluebell-marsh-social-runtime.mjs
       - name: Production Bluebell wildlife runtime
         if: github.event_name == 'push'
         env:
@@ -79,3 +83,8 @@ jobs:
         env:
           BASE_URL: https://toon-valley.vercel.app
         run: timeout 150s node tests/bluebell-ecosystem-links-runtime.mjs
+      - name: Production Bluebell marsh social runtime
+        if: github.event_name == 'push'
+        env:
+          BASE_URL: https://toon-valley.vercel.app
+        run: timeout 150s node tests/bluebell-marsh-social-runtime.mjs
