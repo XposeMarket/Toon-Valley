@@ -28,6 +28,7 @@ try {
     const TV = window.ToonValley;
     const wildlifeRoot = TV.scene.getObjectByName('bluebell-wildlife');
     const marshRoot = TV.scene.getObjectByName('bluebell-marsh-life');
+    const ecosystemRoot = TV.scene.getObjectByName('bluebell-ecosystem-links');
 
     TV.player.position.set(220, TV.terrainHeight(220, 220), 220);
     for (let i = 0; i < 14; i++) E.advance(.1);
@@ -55,7 +56,8 @@ try {
       }
       W.advance(.1);
       E.advance(.1);
-      forageObserved = E.getState().forageRippleBursts > 0 && E.getState().forageMinnowResponses > 0;
+      const state = E.getState();
+      forageObserved = state.forageRippleBursts > 0 && state.forageMinnowResponses > 0;
     }
 
     for (let i = 0; i < 70 && W.getState().dragonflies.filter(dragon => dragon.perch <= 0 && dragon.dodge <= 0).length < 2; i++) W.advance(.1);
@@ -92,7 +94,7 @@ try {
     }
 
     const tongueCount = [1, 2, 3].filter(index => marshRoot?.getObjectByName(`bluebell-frog-${index}`)?.getObjectByName(`bluebell-frog-tongue-${index}`)).length;
-    const forageRippleCount = [1, 2, 3, 4, 5, 6].filter(index => wildlifeRoot?.getObjectByName(`bluebell-forage-ripple-${index}`)).length;
+    const forageRippleCount = [1, 2, 3, 4, 5, 6].filter(index => ecosystemRoot?.getObjectByName(`bluebell-forage-ripple-${index}`)).length;
 
     return {
       flags: {
@@ -110,6 +112,7 @@ try {
         population: E.existingPopulationOnly,
         low: E.lowAllocationBehavior
       },
+      ecosystemRootPresent: Boolean(ecosystemRoot),
       minnowShift,
       forageObserved,
       forageRippleCount,
@@ -126,7 +129,7 @@ try {
   if (report.state.duckMinnowDisturbances < 1 || report.state.duckMinnowResponses < 1 || report.state.minnowImpulseCorrections < 2 || report.state.minnowPeakShift <= .001 || report.minnowShift <= .02) {
     throw new Error(`Duck/minnow ecosystem disturbance regression ${JSON.stringify(report)}`);
   }
-  if (!report.forageObserved || report.forageRippleCount !== 6 || report.state.forageRipplePoolSize !== 6 || report.state.forageRippleBursts < 1 || report.state.forageMinnowResponses < 1) {
+  if (!report.ecosystemRootPresent || !report.forageObserved || report.forageRippleCount !== 6 || report.state.forageRipplePoolSize !== 6 || report.state.forageRippleBursts < 1 || report.state.forageMinnowResponses < 1) {
     throw new Error(`Duck forage water/minnow response regression ${JSON.stringify(report)}`);
   }
   if (!report.activeDragonReady) throw new Error(`Could not prepare airborne dragonfly pair for frog interaction ${JSON.stringify(report)}`);

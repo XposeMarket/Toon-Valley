@@ -11,6 +11,10 @@
   const marshRoot = TV.scene.getObjectByName('bluebell-marsh-life');
   if (!wildlifeRoot || !marshRoot) return;
 
+  const ecosystemRoot = new THREE.Group();
+  ecosystemRoot.name = 'bluebell-ecosystem-links';
+  TV.scene.add(ecosystemRoot);
+
   const lake = Lake.lake;
   const waterY = TV.terrainHeight(lake.x, lake.z) + .23;
   const duckGroups = [1, 2, 3].map(i => wildlifeRoot.getObjectByName(`bluebell-duck-${i}`)).filter(Boolean);
@@ -28,7 +32,7 @@
     mesh.name = `bluebell-forage-ripple-${index + 1}`;
     mesh.rotation.x = -Math.PI / 2;
     mesh.visible = false;
-    wildlifeRoot.add(mesh);
+    ecosystemRoot.add(mesh);
     return { mesh, life: 0, duration: .72 };
   });
   let forageRippleCursor = 0;
