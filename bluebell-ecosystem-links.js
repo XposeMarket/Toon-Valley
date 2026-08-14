@@ -22,6 +22,7 @@
   const minnowGroups = [1, 2, 3, 4, 5, 6, 7].map(i => marshRoot.getObjectByName(`bluebell-minnow-${i}`)).filter(Boolean);
   const frogGroups = [1, 2, 3].map(i => marshRoot.getObjectByName(`bluebell-frog-${i}`)).filter(Boolean);
   const dragonHomes = dragonGroups.map(group => ({ x: group.position.x, y: group.position.y, z: group.position.z }));
+  const dragonMaxY = Math.max(waterY + 2.5, ...dragonHomes.map(home => home.y)) + 2.6;
 
   const tongueGeometry = new THREE.BoxGeometry(.04, .035, 1);
   const tongueMaterial = new THREE.MeshToonMaterial({ color: 0xe97886 });
@@ -90,23 +91,22 @@
   }
 
   function clampDragonflyToHabitat(index, group) {
-    const home = dragonHomes[index];
-    if (!home || !group) return;
-    const dx = group.position.x - home.x;
-    const dz = group.position.z - home.z;
-    const distance = Math.hypot(dx, dz);
-    const maxRadius = 4.6;
+    if (!group) return;
+    const rx = Math.max(.001, lake.rx * .9);
+    const rz = Math.max(.001, lake.rz * .9);
+    const dx = group.position.x - lake.x;
+    const dz = group.position.z - lake.z;
+    const normalizedDistance = Math.hypot(dx / rx, dz / rz);
     let corrected = false;
-    if (distance > maxRadius) {
-      const scale = maxRadius / distance;
-      group.position.x = home.x + dx * scale;
-      group.position.z = home.z + dz * scale;
+    if (normalizedDistance > 1) {
+      const scale = 1 / normalizedDistance;
+      group.position.x = lake.x + dx * scale;
+      group.position.z = lake.z + dz * scale;
       corrected = true;
     }
-    const minY = home.y - .45;
-    const maxY = home.y + 2.35;
-    if (group.position.y < minY || group.position.y > maxY) {
-      group.position.y = Math.max(minY, Math.min(maxY, group.position.y));
+    const minY = waterY + .32;
+    if (group.position.y < minY || group.position.y > dragonMaxY) {
+      group.position.y = Math.max(minY, Math.min(dragonMaxY, group.position.y));
       corrected = true;
     }
     if (corrected) boundedDragonflyCorrections += 1;
